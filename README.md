@@ -15,9 +15,18 @@ Admin menu items can sync for **everyone** on the live site (not only your brows
 
 1. Create a free project at [supabase.com](https://supabase.com).
 2. **SQL Editor** → run `supabase/schema.sql` from this repo.
-3. **Project Settings → API** → copy URL, `anon` key, and `service_role` key.
-4. Copy `.env.example` to `.env.local` and fill values.
-5. On **Vercel** (or your host): add the same env vars → **Redeploy**.
+3. **Project Settings → API Keys** → copy URL, **anon / publishable** key, and **service role** key (LEGACY JWT `eyJ...` for `SUPABASE_SERVICE_ROLE_KEY` if `sb_secret_` fails).
+4. Copy `.env.example` to `.env.local` and fill values (never commit `.env.local`).
+5. On **Vercel** → **Settings → Environment Variables** → add at least:
+
+   | Variable | Required for cloud menu |
+   |----------|-------------------------|
+   | `NEXT_PUBLIC_SUPABASE_URL` | Yes |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Yes |
+   | `ADMIN_API_SECRET` | Yes (same as admin password) |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Optional today (set for parity with local) |
+
+   Then **Redeploy** production.
 6. Log in to **Admin** on the live site (so API auth works), then add/edit menu items.
 
 `ADMIN_API_SECRET` should match your admin password (or set a dedicated secret).
