@@ -10,6 +10,13 @@ import {
   type ReactNode,
 } from "react";
 import { DEFAULT_STATE, normalizePhone } from "./defaults";
+import {
+  fetchProductsFromServer,
+  removeProductOnServer,
+  replaceProductsOnServer,
+  upsertProductOnServer,
+} from "./products-api";
+import { clearAdminApiSecret, getAdminApiSecret, setAdminApiSecret } from "./admin-api";
 import type {
   AppState,
   CustomerAccount,
@@ -28,6 +35,8 @@ const CUSTOMER_SESSION_KEY = "csf-customer-session";
 
 type StoreContextValue = {
   ready: boolean;
+  /** True when Supabase env is set — menu is shared for all visitors */
+  serverMenuConfigured: boolean;
   state: AppState;
   adminLoggedIn: boolean;
   customer: CustomerAccount | null;
@@ -72,6 +81,7 @@ type StoreContextValue = {
   removeCustomerLocation: (locationId: string) => void;
   updateCustomerName: (name: string, phoneOverride?: string) => void;
   getCustomerOrders: () => CustomerOrder[];
+  syncProductsToServer: (products: Product[]) => Promise<boolean>;
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -163,17 +173,36 @@ function makeOtp(): string {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(DEFAULT_STATE);
   const [ready, setReady] = useState(false);
+  const [serverMenuConfigured, setServerMenuConfigured] = useState(false);
   const [adminLoggedIn, setAdminLoggedIn] = useState(false);
   const [customerPhone, setCustomerPhone] = useState<string | null>(null);
   const [pendingOtp, setPendingOtp] = useState<PendingOtp | null>(null);
 
   useEffect(() => {
-    const loaded = loadState();
-    setState(loaded);
-    setAdminLoggedIn(sessionStorage.getItem(ADMIN_SESSION_KEY) === "1");
-    const sessPhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY);
-    if (sessPhone) setCustomerPhone(normalizePhone(sessPhone));
-    setReady(true);
+    async function init() {
+      const local = loadState();
+      try {
+        const { configured, products } = await fetchProductsFromServer();
+        setServerMenuConfigured(configured);
+        if (configured && products.length > 0) {
+          local.products = products;
+        }
+      } catch {
+        setServerMenuConfigured(false);
+      }
+      setState(local);
+      const adminSession = sessionStorage.getItem(ADMIN_SESSION_KEY) === "1";
+      if (adminSession && !getAdminApiSecret()) {
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+        setAdminLoggedIn(false);
+      } else {
+        setAdminLoggedIn(adminSession);
+      }
+      const sessPhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY);
+      if (sessPhone) setCustomerPhone(normalizePhone(sessPhone));
+      setReady(true);
+    }
+    void init();
   }, []);
 
   useEffect(() => {
@@ -206,12 +235,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const updateProductPrice = useCallback(
     (productId: string, pricePerKg: number, bulkPricePerKg: number) => {
-      setState((s) => ({
-        ...s,
-        products: s.products.map((p) =>
+      setState((s) => {
+        const products = s.products.map((p) =>
           p.id === productId ? { ...p, pricePerKg, bulkPricePerKg } : p
-        ),
-      }));
+        );
+        const updated = products.find((p) => p.id === productId);
+        if (updated) void upsertProductOnServer(updated);
+        return { ...s, products };
+      });
     },
     []
   );
@@ -231,6 +262,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : [...s.products, cleaned],
       };
     });
+    void upsertProductOnServer(cleaned);
   }, []);
 
   const removeProduct = useCallback((id: string) => {
@@ -238,6 +270,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...s,
       products: s.products.filter((p) => p.id !== id),
     }));
+    void removeProductOnServer(id);
+  }, []);
+
+  const syncProductsToServer = useCallback(async (products: Product[]) => {
+    return replaceProductsOnServer(products);
   }, []);
 
   const upsertPartner = useCallback((partner: DeliveryPartner) => {
@@ -347,6 +384,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         password === state.config.adminPassword;
       if (ok) {
         sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
+        setAdminApiSecret(password);
         setAdminLoggedIn(true);
       }
       return ok;
@@ -356,6 +394,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const logoutAdmin = useCallback(() => {
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    clearAdminApiSecret();
     setAdminLoggedIn(false);
   }, []);
 
@@ -523,6 +562,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       ready,
+      serverMenuConfigured,
       state,
       adminLoggedIn,
       customer,
@@ -547,9 +587,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removeCustomerLocation,
       updateCustomerName,
       getCustomerOrders,
+      syncProductsToServer,
     }),
     [
       ready,
+      serverMenuConfigured,
       state,
       adminLoggedIn,
       customer,
@@ -574,6 +616,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removeCustomerLocation,
       updateCustomerName,
       getCustomerOrders,
+      syncProductsToServer,
     ]
   );
 

@@ -6,7 +6,23 @@ Website demo for **Chandhu Sea Food** — fresh prawns & seafood shop in Tirupat
 
 - **Next.js 15** + **React** + **TypeScript**
 - **Leaflet / OpenStreetMap** for delivery & hub maps (no API key for demo)
-- Client-side demo store (`localStorage`) — prices, orders, partners, settings
+- **Supabase** (optional) for shared menu — without it, demo uses `localStorage` per browser
+- Client-side demo store for orders, partners, settings (local until backend phase 2)
+
+## Shared menu (Supabase)
+
+Admin menu items can sync for **everyone** on the live site (not only your browser).
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. **SQL Editor** → run `supabase/schema.sql` from this repo.
+3. **Project Settings → API** → copy URL, `anon` key, and `service_role` key.
+4. Copy `.env.example` to `.env.local` and fill values.
+5. On **Vercel** (or your host): add the same env vars → **Redeploy**.
+6. Log in to **Admin** on the live site (so API auth works), then add/edit menu items.
+
+`ADMIN_API_SECRET` should match your admin password (or set a dedicated secret).
+
+Without Supabase env vars, the app still runs with browser-only storage (localhost vs live stay separate).
 
 ## Features
 

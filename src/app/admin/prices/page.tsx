@@ -28,8 +28,15 @@ const emptyForm = {
 };
 
 export default function AdminPricesPage() {
-  const { state, updateProductPrice, upsertProduct, removeProduct, ready } =
-    useStore();
+  const {
+    state,
+    updateProductPrice,
+    upsertProduct,
+    removeProduct,
+    syncProductsToServer,
+    serverMenuConfigured,
+    ready,
+  } = useStore();
   const [draft, setDraft] = useState<
     Record<string, { pricePerKg: number; bulkPricePerKg: number }>
   >({});
@@ -53,11 +60,27 @@ export default function AdminPricesPage() {
   if (!ready) return <p className="container section">Loading…</p>;
 
   function saveAll() {
+    const merged = state.products.map((p) => ({
+      ...p,
+      pricePerKg: draft[p.id]?.pricePerKg ?? p.pricePerKg,
+      bulkPricePerKg: draft[p.id]?.bulkPricePerKg ?? p.bulkPricePerKg,
+    }));
     Object.entries(draft).forEach(([id, prices]) => {
       updateProductPrice(id, prices.pricePerKg, prices.bulkPricePerKg);
     });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    void (async () => {
+      if (serverMenuConfigured) {
+        const ok = await syncProductsToServer(merged);
+        if (!ok) {
+          setFormMsg(
+            "Prices saved here, but cloud sync failed. Log in to admin again and retry."
+          );
+          return;
+        }
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    })();
   }
 
   function startEdit(p: Product) {
@@ -133,6 +156,16 @@ export default function AdminPricesPage() {
         Add seafood items, set retail &amp; bulk INR rates, and mark items active
         or out of stock. Changes apply immediately on the website.
       </p>
+      {!serverMenuConfigured ? (
+        <div className="alert alert-warn" style={{ marginTop: "0.75rem" }}>
+          Cloud menu is off — items save only in this browser. Add Supabase env
+          vars (see README) so everyone sees the same menu on the live site.
+        </div>
+      ) : (
+        <div className="alert alert-ok" style={{ marginTop: "0.75rem" }}>
+          Cloud menu is on — items sync for all visitors on the live site.
+        </div>
+      )}
 
       <form className="panel admin-item-form" onSubmit={onSubmitItem}>
         <h3 className="admin-item-form-title">
