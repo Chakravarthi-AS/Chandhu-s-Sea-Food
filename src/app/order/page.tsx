@@ -11,6 +11,7 @@ import {
   formatPhoneDisplay,
   formatQtyParts,
   haversineKm,
+  isProductInStock,
   qtyFromKgGrams,
   tonsToKg,
 } from "@/lib/defaults";
@@ -59,23 +60,8 @@ function OrderForm() {
   const search = useSearchParams();
   const router = useRouter();
 
-  const seedProduct =
-    products.find((p) => p.id === search.get("product"))?.id ??
-    products.find((p) => p.featured)?.id ??
-    products[0]?.id;
-
-  const [cart, setCart] = useState<CartLine[]>(() => [
-    {
-      key: crypto.randomUUID(),
-      productId: seedProduct,
-      mode: "retail",
-      kg: 1,
-      grams: 0,
-      bulkValue: 50,
-      bulkUnit: "kg",
-    },
-  ]);
-  const [draftProductId, setDraftProductId] = useState(seedProduct);
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [draftProductId, setDraftProductId] = useState("");
   const [draftMode, setDraftMode] = useState<OrderMode>("retail");
   const [draftKg, setDraftKg] = useState(1);
   const [draftGrams, setDraftGrams] = useState(0);
@@ -102,6 +88,14 @@ function OrderForm() {
     const code = submittedCode || placedFromUrl;
     return code ? getOrderByTracking(code) : undefined;
   }, [submittedCode, placedFromUrl, getOrderByTracking, state.orders]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const fromUrl = search.get("product");
+    if (!fromUrl) return;
+    const p = products.find((x) => x.id === fromUrl);
+    if (p && isProductInStock(p)) setDraftProductId(p.id);
+  }, [ready, search, products]);
 
   useEffect(() => {
     if (!customer) return;
@@ -153,14 +147,17 @@ function OrderForm() {
   }
 
   const cartLines = useMemo(() => {
-    return cart.map((line) => {
-      const product = products.find((p) => p.id === line.productId) ?? products[0];
-      const quantityKg = lineQuantityKg(line);
-      const pricePerKg =
-        line.mode === "bulk" ? product.bulkPricePerKg : product.pricePerKg;
-      const lineTotalInr = Math.round(quantityKg * pricePerKg);
-      return { line, product, quantityKg, pricePerKg, lineTotalInr };
-    });
+    return cart
+      .map((line) => {
+        const product = products.find((p) => p.id === line.productId);
+        if (!product) return null;
+        const quantityKg = lineQuantityKg(line);
+        const pricePerKg =
+          line.mode === "bulk" ? product.bulkPricePerKg : product.pricePerKg;
+        const lineTotalInr = Math.round(quantityKg * pricePerKg);
+        return { line, product, quantityKg, pricePerKg, lineTotalInr };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
   }, [cart, products]);
 
   const totalKg = cartLines.reduce((s, l) => s + l.quantityKg, 0);
@@ -192,6 +189,15 @@ function OrderForm() {
 
   function addToCart() {
     setError(null);
+    if (!draftProductId) {
+      setError("Select a seafood item first.");
+      return;
+    }
+    const picked = products.find((p) => p.id === draftProductId);
+    if (!picked || !isProductInStock(picked)) {
+      setError("This item is out of stock.");
+      return;
+    }
     const err = validateDraftQty();
     if (err) {
       setError(err);
@@ -212,7 +218,7 @@ function OrderForm() {
   }
 
   function removeFromCart(key: string) {
-    setCart((c) => (c.length <= 1 ? c : c.filter((l) => l.key !== key)));
+    setCart((c) => c.filter((l) => l.key !== key));
   }
 
   function validateOrder(): string | null {
@@ -221,6 +227,9 @@ function OrderForm() {
       return "Please fill name, phone, and delivery address.";
     }
     for (const row of cartLines) {
+      if (!isProductInStock(row.product)) {
+        return `${row.product.name} is out of stock. Remove it from your cart.`;
+      }
       if (row.line.mode === "retail") {
         if (row.quantityKg < 0.5 || row.quantityKg > 10) {
           return `${row.product.name}: retail quantity must be 0.5–10 kg.`;
@@ -392,9 +401,8 @@ function OrderForm() {
       <div className="section-head">
         <h1>Place your order</h1>
         <p>
-          Add multiple seafood items to one order. Use kg + grams for retail
-          (e.g. 4 kg + 500 g = 4.5 kg). Under {config.minKgForExtended} kg needs
-          agent confirmation; {config.minKgForExtended} kg and above auto-accepts.
+          Build a multi-item cart — retail or bulk, from kilograms to tons.
+          Fresh Nellore seafood, delivered from our Tirupati hub.
         </p>
       </div>
 
@@ -440,13 +448,19 @@ function OrderForm() {
               value={draftProductId}
               onChange={(e) => setDraftProductId(e.target.value)}
             >
+              <option value="">Select seafood item…</option>
               {products.map((p) => (
-                <option key={p.id} value={p.id}>
+                <option
+                  key={p.id}
+                  value={p.id}
+                  disabled={!isProductInStock(p)}
+                >
                   {p.name} —{" "}
                   {formatInr(
                     draftMode === "bulk" ? p.bulkPricePerKg : p.pricePerKg
                   )}
                   /kg
+                  {!isProductInStock(p) ? " (out of stock)" : ""}
                 </option>
               ))}
             </select>
@@ -524,14 +538,16 @@ function OrderForm() {
             </div>
           )}
 
+          {draftProductId && (
           <div className="alert alert-info">
             This item: <strong>{formatQtyParts(draftQty)}</strong>
             {draftMode === "retail" && draftQty >= 0.5 && draftQty <= 10 && (
               <> ({draftKg} kg + {draftGrams} g)</>
             )}
           </div>
+          )}
 
-          <button type="button" className="btn btn-ghost" onClick={addToCart}>
+          <button type="button" className="btn btn-ghost btn-block" onClick={addToCart}>
             + Add to cart
           </button>
 
@@ -539,6 +555,11 @@ function OrderForm() {
             Your cart ({cart.length})
           </h2>
           <div style={{ display: "grid", gap: "0.65rem" }}>
+            {cart.length === 0 && (
+              <p style={{ margin: 0, color: "var(--ink-muted)", fontSize: "0.95rem" }}>
+                Cart is empty. Select an item above and tap Add to cart.
+              </p>
+            )}
             {cartLines.map((row) => (
               <div
                 key={row.line.key}
@@ -565,7 +586,6 @@ function OrderForm() {
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  disabled={cart.length <= 1}
                   onClick={() => removeFromCart(row.line.key)}
                 >
                   Remove
@@ -577,11 +597,6 @@ function OrderForm() {
           <div className="alert alert-ok">
             Cart total: <strong>{formatQtyParts(totalKg)}</strong> ·{" "}
             <strong>{formatInr(totalInr)}</strong>
-            {willAutoConfirm ? (
-              <> · Will auto-confirm (≥ {config.minKgForExtended} kg)</>
-            ) : (
-              <> · Needs agent confirm (&lt; {config.minKgForExtended} kg)</>
-            )}
           </div>
 
           <div className="form-row">
@@ -643,7 +658,7 @@ function OrderForm() {
               onBlur={() => {
                 if (address.trim().length >= 8) void lookupAddress();
               }}
-              placeholder="e.g. 3-100, Ushodaya Colony, Tiruchanoor, Tirupati, 517503"
+              placeholder="e.g. 3-2, Marithi Nilayam , Near SBI Bank, Tiruchanoor, Tirupati, 517503"
               required
             />
           </div>

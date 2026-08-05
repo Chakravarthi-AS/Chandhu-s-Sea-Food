@@ -8,7 +8,7 @@ import { useStore } from "@/lib/store";
 const LINKS = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/orders", label: "Orders" },
-  { href: "/admin/prices", label: "Prices" },
+  { href: "/admin/prices", label: "Menu items" },
   { href: "/admin/partners", label: "Delivery partners" },
   { href: "/admin/settings", label: "Shop & delivery" },
 ];

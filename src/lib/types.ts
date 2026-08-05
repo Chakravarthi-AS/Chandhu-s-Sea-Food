@@ -18,6 +18,8 @@ export interface Product {
   featured: boolean;
   category: "prawns" | "fish" | "crab" | "other";
   imageEmoji: string;
+  /** When false, item shows as out of stock on the storefront */
+  active: boolean;
 }
 
 export interface ShopConfig {

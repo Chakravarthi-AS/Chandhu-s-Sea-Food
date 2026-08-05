@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useStore } from "@/lib/store";
-import { formatInr } from "@/lib/defaults";
+import { formatInr, isProductInStock } from "@/lib/defaults";
 import Link from "next/link";
 
 const DeliveryMap = dynamic(
@@ -41,9 +41,9 @@ export default function HomePage() {
           <h1 className="hero-brand">{config.shopName}</h1>
           <h2>{config.tagline}</h2>
           <p>
-            Prawns are our specialty — retail with kg + grams (e.g. 4.5 kg), plus
-            bulk from kilograms to tons. Multi-item carts welcome. Orders under
-            2 kg need agent confirmation; 2 kg and above are auto-accepted.
+            Prawns are our specialty — shop retail or bulk, from kilograms to
+            tons. Mix items in one cart and get same-day Nellore freshness
+            delivered across Tirupati.
           </p>
           <div className="hero-actions">
             <Link href="/order" className="btn btn-primary">
@@ -58,7 +58,24 @@ export default function HomePage() {
             </a>
           </div>
         </div>
-        <div className="hero-wave" aria-hidden />
+        <div className="hero-wave" aria-hidden>
+          <div className="hero-wave-track">
+            <svg viewBox="0 0 2880 80" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                className="wave-fill wave-back"
+                d="M0,44 C180,70 360,18 540,42 C720,66 900,22 1080,46 C1260,70 1440,26 1620,50 C1800,74 1980,20 2160,44 C2340,68 2520,24 2700,48 C2790,58 2835,52 2880,48 L2880,80 L0,80 Z"
+              />
+            </svg>
+          </div>
+          <div className="hero-wave-track hero-wave-track-front">
+            <svg viewBox="0 0 2880 80" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                className="wave-fill wave-front"
+                d="M0,52 C160,28 320,68 480,44 C640,20 800,64 960,40 C1120,16 1280,60 1440,36 C1600,12 1760,56 1920,32 C2080,8 2240,52 2400,28 C2560,4 2720,48 2880,36 L2880,80 L0,80 Z"
+              />
+            </svg>
+          </div>
+        </div>
       </section>
 
       <section className="section" id="fresh">
@@ -103,32 +120,64 @@ export default function HomePage() {
         <div className="container">
           <div className="section-head">
             <h2>Today&apos;s menu</h2>
-            <p>
-              Prices shown in INR per kg — fully configurable in Admin. Demo
-              rates for showcase; you can update them anytime.
-            </p>
+            <p>Fresh catch priced per kg in INR — order what you need today.</p>
           </div>
+          {products.length === 0 ? (
+            <div className="panel empty-menu">
+              <p style={{ margin: 0, color: "var(--ink-muted)" }}>
+                Menu is being updated. Check back soon, or ask us for today&apos;s
+                catch.
+              </p>
+              <Link href="/#contact" className="btn btn-primary btn-sm" style={{ marginTop: "0.85rem" }}>
+                Contact us
+              </Link>
+            </div>
+          ) : (
           <div className="product-grid">
-            {[...featured, ...rest].map((p) => (
-              <article key={p.id} className="product-card">
-                <div className="emoji" aria-hidden>
-                  {p.imageEmoji}
+            {[...featured, ...rest].map((p, i) => {
+              const inStock = isProductInStock(p);
+              return (
+              <article
+                key={p.id}
+                className={`product-card${inStock ? "" : " product-card--sold-out"}`}
+                style={{ animationDelay: `${i * 0.05}s` }}
+              >
+                <div className="product-card-top">
+                  {p.imageEmoji ? (
+                    <div className="emoji" aria-hidden>
+                      {p.imageEmoji}
+                    </div>
+                  ) : (
+                    <div className="emoji emoji-empty" aria-hidden />
+                  )}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                    {p.category === "prawns" && <span className="badge">Prawns</span>}
+                    {!inStock && (
+                      <span className="badge badge-sold-out">Out of stock</span>
+                    )}
+                  </div>
                 </div>
-                {p.category === "prawns" && <span className="badge">Prawns</span>}
                 <h3>{p.name}</h3>
-                <p>{p.description}</p>
                 <div className="price-row">
                   <span className="price">{formatInr(p.pricePerKg)}/kg</span>
-                  <span style={{ fontSize: "0.85rem", color: "var(--ink-muted)" }}>
+                  <span className="bulk-price">
                     Bulk {formatInr(p.bulkPricePerKg)}/kg
                   </span>
                 </div>
-                <Link href={`/order?product=${p.id}`} className="btn btn-primary btn-sm">
-                  Order now
-                </Link>
+                {inStock ? (
+                  <Link href={`/order?product=${p.id}`} className="btn btn-primary btn-sm">
+                    Order now
+                  </Link>
+                ) : (
+                  <span className="btn btn-ghost btn-sm product-card-disabled">
+                    Out of stock
+                  </span>
+                )}
               </article>
-            ))}
+            );
+            })}
           </div>
+          )}
         </div>
       </section>
 
@@ -136,22 +185,20 @@ export default function HomePage() {
         <div className="container two-col">
           <div>
             <div className="section-head">
-              <h2>Delivery around our Tirupati hub</h2>
+              <h2>Delivered from our Tirupati hub</h2>
               <p>
-                Orders under {config.minKgForExtended} kg are delivered within{" "}
-                {config.retailDeliveryRadiusKm} km of our hub and need agent
-                confirmation. Orders of {config.minKgForExtended} kg and above
-                are auto-confirmed.
+                Fresh seafood from Tiruchanoor to your door — nearby small
+                orders and larger bulk drops, handled by our team.
               </p>
             </div>
-            <ul style={{ color: "var(--ink-muted)", paddingLeft: "1.1rem" }}>
-              <li>Retail: kg dropdown + grams (e.g. 4 kg + 500 g)</li>
-              <li>Multi-item cart in one order</li>
-              <li>Map pin = your delivery address vs hub range</li>
+            <ul className="delivery-points">
+              <li>Retail packs or bulk loads in one checkout</li>
+              <li>Multi-item carts for home &amp; kitchen needs</li>
               <li>
-                Under {config.minKgForExtended} kg → agent confirm;{" "}
-                {config.minKgForExtended}+ kg → auto-accept
+                Hub coverage about {config.retailDeliveryRadiusKm} km for smaller
+                orders
               </li>
+              <li>Agent-backed confirmation when you need it</li>
             </ul>
             <Link href="/order" className="btn btn-primary" style={{ marginTop: "1rem" }}>
               Start an order

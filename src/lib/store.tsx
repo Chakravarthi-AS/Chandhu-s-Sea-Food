@@ -22,7 +22,7 @@ import type {
   ShopConfig,
 } from "./types";
 
-const STORAGE_KEY = "chandhu-sea-food-demo-v2";
+const STORAGE_KEY = "chandhu-sea-food-demo-v4";
 const ADMIN_SESSION_KEY = "csf-admin-session";
 const CUSTOMER_SESSION_KEY = "csf-customer-session";
 
@@ -39,6 +39,8 @@ type StoreContextValue = {
     pricePerKg: number,
     bulkPricePerKg: number
   ) => void;
+  upsertProduct: (product: Product) => void;
+  removeProduct: (id: string) => void;
   upsertPartner: (partner: DeliveryPartner) => void;
   removePartner: (id: string) => void;
   placeOrder: (
@@ -79,9 +81,22 @@ function loadState(): AppState {
   try {
     const raw =
       localStorage.getItem(STORAGE_KEY) ??
+      localStorage.getItem("chandhu-sea-food-demo-v3") ??
+      localStorage.getItem("chandhu-sea-food-demo-v2") ??
       localStorage.getItem("chandhu-sea-food-demo-v1");
     if (!raw) return structuredClone(DEFAULT_STATE);
     const parsed = JSON.parse(raw) as Partial<AppState>;
+    const savedProducts = (parsed.products ?? []).map((p) => ({
+      ...p,
+      description: "",
+    }));
+    const products =
+      savedProducts.length > 0
+        ? savedProducts.map((p) => ({
+            ...p,
+            active: p.active !== false,
+          }))
+        : DEFAULT_STATE.products;
     return {
       ...DEFAULT_STATE,
       ...parsed,
@@ -109,9 +124,7 @@ function loadState(): AppState {
         adminPassword:
           parsed.config?.adminPassword ?? DEFAULT_STATE.config.adminPassword,
       },
-      products: parsed.products?.length
-        ? parsed.products
-        : DEFAULT_STATE.products,
+      products,
       partners: parsed.partners ?? DEFAULT_STATE.partners,
       orders: (parsed.orders ?? []).map((o) => ({
         ...o,
@@ -202,6 +215,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     []
   );
+
+  const upsertProduct = useCallback((product: Product) => {
+    const cleaned: Product = {
+      ...product,
+      description: "",
+      active: product.active !== false,
+    };
+    setState((s) => {
+      const exists = s.products.some((p) => p.id === cleaned.id);
+      return {
+        ...s,
+        products: exists
+          ? s.products.map((p) => (p.id === cleaned.id ? cleaned : p))
+          : [...s.products, cleaned],
+      };
+    });
+  }, []);
+
+  const removeProduct = useCallback((id: string) => {
+    setState((s) => ({
+      ...s,
+      products: s.products.filter((p) => p.id !== id),
+    }));
+  }, []);
 
   const upsertPartner = useCallback((partner: DeliveryPartner) => {
     setState((s) => {
@@ -493,6 +530,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       resetDemo,
       updateConfig,
       updateProductPrice,
+      upsertProduct,
+      removeProduct,
       upsertPartner,
       removePartner,
       placeOrder,
@@ -518,6 +557,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       resetDemo,
       updateConfig,
       updateProductPrice,
+      upsertProduct,
+      removeProduct,
       upsertPartner,
       removePartner,
       placeOrder,

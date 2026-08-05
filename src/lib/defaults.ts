@@ -12,8 +12,8 @@ export const DEFAULT_STATE: AppState = {
       "Opposite to DCC Bank and near Navajeevan, Tiruchanoor, 517503",
     retailDeliveryRadiusKm: 10,
     minKgForExtended: 2,
-    supportPhone: "+91 98765 43210",
-    supportWhatsApp: "+91 98765 43210",
+    supportPhone: "+91 7032419218",
+    supportWhatsApp: "+91 7032419218",
     supportEmail: "help@chandhuseafood.in",
     supportHours: "Daily 7:00 AM – 9:00 PM IST",
     adminUsername: "admin",
@@ -24,59 +24,61 @@ export const DEFAULT_STATE: AppState = {
       id: "prawn-vanamei",
       name: "Vannamei Prawns",
       slug: "vannamei-prawns",
-      description:
-        "Our hero catch — peeled & cleaned daily by our team. Fresh from Nellore farms, never frozen.",
+      description: "",
       pricePerKg: 480,
       bulkPricePerKg: 430,
       featured: true,
       category: "prawns",
       imageEmoji: "🦐",
+      active: true,
     },
     {
       id: "prawn-tiger",
       name: "Tiger Prawns",
       slug: "tiger-prawns",
-      description:
-        "Large tiger prawns, hygienically cleaned in-house. Ideal for curries and grills.",
+      description: "",
       pricePerKg: 620,
       bulkPricePerKg: 560,
       featured: true,
       category: "prawns",
       imageEmoji: "🦐",
+      active: true,
     },
     {
       id: "prawn-jumbo",
       name: "Jumbo Prawns",
       slug: "jumbo-prawns",
-      description:
-        "Premium jumbo size for celebrations and restaurants. Same-day Nellore import.",
+      description: "",
       pricePerKg: 780,
       bulkPricePerKg: 700,
       featured: true,
       category: "prawns",
       imageEmoji: "🦐",
+      active: true,
     },
     {
       id: "fish-rohu",
       name: "Rohu (Fresh Cut)",
       slug: "rohu",
-      description: "Daily cut by our staff. Clean, ice-packed, ready to cook.",
+      description: "",
       pricePerKg: 280,
       bulkPricePerKg: 250,
       featured: false,
       category: "fish",
       imageEmoji: "🐟",
+      active: true,
     },
     {
       id: "crab-mud",
       name: "Mud Crab",
       slug: "mud-crab",
-      description: "Live / fresh mud crab sourced with our Nellore network.",
+      description: "",
       pricePerKg: 520,
       bulkPricePerKg: 470,
       featured: false,
       category: "crab",
       imageEmoji: "🦀",
+      active: true,
     },
   ],
   partners: [
@@ -179,4 +181,8 @@ export function formatPhoneDisplay(phone: string): string {
   const n = normalizePhone(phone);
   if (n.length === 10) return `+91 ${n.slice(0, 5)} ${n.slice(5)}`;
   return phone.trim();
+}
+
+export function isProductInStock(product: { active?: boolean }): boolean {
+  return product.active !== false;
 }

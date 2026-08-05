@@ -1,16 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { AdminShell } from "@/components/AdminShell";
 import { formatInr } from "@/lib/defaults";
 import { useStore } from "@/lib/store";
+import type { Product } from "@/lib/types";
+
+const CATEGORIES: Product["category"][] = ["prawns", "fish", "crab", "other"];
+const EMOJI_OPTIONS = ["", "🦐", "🐟", "🦀", "🦞", "🦑", "🐙"];
+
+function slugify(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+const emptyForm = {
+  name: "",
+  category: "prawns" as Product["category"],
+  imageEmoji: "",
+  pricePerKg: 400,
+  bulkPricePerKg: 360,
+  featured: true,
+  active: true,
+};
 
 export default function AdminPricesPage() {
-  const { state, updateProductPrice, ready } = useStore();
+  const { state, updateProductPrice, upsertProduct, removeProduct, ready } =
+    useStore();
   const [draft, setDraft] = useState<
     Record<string, { pricePerKg: number; bulkPricePerKg: number }>
   >({});
   const [saved, setSaved] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [formMsg, setFormMsg] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -34,21 +60,210 @@ export default function AdminPricesPage() {
     setTimeout(() => setSaved(false), 2000);
   }
 
+  function startEdit(p: Product) {
+    setEditingId(p.id);
+    setForm({
+      name: p.name,
+      category: p.category,
+      imageEmoji: p.imageEmoji,
+      pricePerKg: p.pricePerKg,
+      bulkPricePerKg: p.bulkPricePerKg,
+      featured: p.featured,
+      active: p.active !== false,
+    });
+    setFormMsg(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(emptyForm);
+    setFormMsg(null);
+  }
+
+  function setActive(id: string, active: boolean) {
+    const p = state.products.find((x) => x.id === id);
+    if (!p) return;
+    upsertProduct({ ...p, active });
+  }
+
+  function onSubmitItem(e: FormEvent) {
+    e.preventDefault();
+    const name = form.name.trim();
+    if (!name) {
+      setFormMsg("Enter an item name.");
+      return;
+    }
+    if (form.pricePerKg < 1 || form.bulkPricePerKg < 1) {
+      setFormMsg("Prices must be at least ₹1 / kg.");
+      return;
+    }
+
+    const slug = slugify(name) || `item-${Date.now()}`;
+    const id = editingId ?? `item-${slug}-${Date.now().toString(36)}`;
+    const existing = state.products.find((p) => p.id === id);
+
+    upsertProduct({
+      id,
+      name,
+      slug: existing?.slug ?? slug,
+      description: "",
+      pricePerKg: form.pricePerKg,
+      bulkPricePerKg: form.bulkPricePerKg,
+      featured: form.featured,
+      category: form.category,
+      imageEmoji: form.imageEmoji,
+      active: form.active,
+    });
+
+    setFormMsg(editingId ? "Item updated." : "New item added to the menu.");
+    setEditingId(null);
+    setForm(emptyForm);
+    setTimeout(() => setFormMsg(null), 2500);
+  }
+
+  function onDelete(id: string, name: string) {
+    if (!window.confirm(`Remove “${name}” from the menu?`)) return;
+    removeProduct(id);
+    if (editingId === id) cancelEdit();
+  }
+
   return (
-    <AdminShell title="Configurable prices (INR)">
-      <p style={{ color: "var(--ink-muted)", marginTop: "-0.5rem" }}>
-        Update retail and bulk rates anytime. Storefront and order totals use these
-        values immediately. Replace demo numbers with your real Nellore rates later.
+    <AdminShell title="Menu items & prices">
+      <p className="admin-lead">
+        Add seafood items, set retail &amp; bulk INR rates, and mark items active
+        or out of stock. Changes apply immediately on the website.
       </p>
 
-      <div className="panel" style={{ marginTop: "1rem", overflowX: "auto" }}>
-        <table className="table">
+      <form className="panel admin-item-form" onSubmit={onSubmitItem}>
+        <h3 className="admin-item-form-title">
+          {editingId ? "Edit item" : "Add new item"}
+        </h3>
+        <div className="admin-item-form-grid">
+          <div className="form-row admin-field-span-2">
+            <label htmlFor="item-name">Name</label>
+            <input
+              id="item-name"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="e.g. White Prawns"
+              required
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="item-category">Category</label>
+            <select
+              id="item-category"
+              value={form.category}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  category: e.target.value as Product["category"],
+                }))
+              }
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-row">
+            <label htmlFor="item-emoji">Icon</label>
+            <select
+              id="item-emoji"
+              value={form.imageEmoji}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, imageEmoji: e.target.value }))
+              }
+            >
+              {EMOJI_OPTIONS.map((em) => (
+                <option key={em || "none"} value={em}>
+                  {em || "None (empty)"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-row">
+            <label htmlFor="item-retail">Retail ₹ / kg</label>
+            <input
+              id="item-retail"
+              type="number"
+              min={1}
+              value={form.pricePerKg}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, pricePerKg: Number(e.target.value) }))
+              }
+              required
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="item-bulk">Bulk ₹ / kg</label>
+            <input
+              id="item-bulk"
+              type="number"
+              min={1}
+              value={form.bulkPricePerKg}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  bulkPricePerKg: Number(e.target.value),
+                }))
+              }
+              required
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="item-active">Available</label>
+            <select
+              id="item-active"
+              value={form.active ? "yes" : "no"}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, active: e.target.value === "yes" }))
+              }
+            >
+              <option value="yes">Yes — in stock</option>
+              <option value="no">No — out of stock</option>
+            </select>
+          </div>
+          <div className="form-row admin-field-check">
+            <label htmlFor="item-featured">Featured on home</label>
+            <label className="check-inline">
+              <input
+                id="item-featured"
+                type="checkbox"
+                checked={form.featured}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, featured: e.target.checked }))
+                }
+              />
+              Show in featured section
+            </label>
+          </div>
+        </div>
+        <div className="admin-item-form-actions">
+          <button type="submit" className="btn btn-primary">
+            {editingId ? "Update item" : "Add item"}
+          </button>
+          {editingId && (
+            <button type="button" className="btn btn-ghost" onClick={cancelEdit}>
+              Cancel
+            </button>
+          )}
+        </div>
+        {formMsg && <div className="alert alert-ok">{formMsg}</div>}
+      </form>
+
+      <div className="panel admin-price-table-wrap">
+        <table className="table admin-price-table">
           <thead>
             <tr>
               <th>Product</th>
               <th>Retail ₹ / kg</th>
               <th>Bulk ₹ / kg</th>
+              <th>Available</th>
               <th>Preview</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -58,9 +273,15 @@ export default function AdminPricesPage() {
                   <strong>
                     {p.imageEmoji} {p.name}
                   </strong>
+                  <div className="admin-product-meta">
+                    {p.category}
+                    {p.featured ? " · featured" : ""}
+                    {p.active === false ? " · out of stock" : ""}
+                  </div>
                 </td>
                 <td>
                   <input
+                    className="admin-price-input"
                     type="number"
                     min={1}
                     value={draft[p.id]?.pricePerKg ?? p.pricePerKg}
@@ -75,11 +296,11 @@ export default function AdminPricesPage() {
                         },
                       }))
                     }
-                    style={{ width: 110, padding: "0.45rem", borderRadius: 8 }}
                   />
                 </td>
                 <td>
                   <input
+                    className="admin-price-input"
                     type="number"
                     min={1}
                     value={draft[p.id]?.bulkPricePerKg ?? p.bulkPricePerKg}
@@ -93,25 +314,52 @@ export default function AdminPricesPage() {
                         },
                       }))
                     }
-                    style={{ width: 110, padding: "0.45rem", borderRadius: 8 }}
                   />
                 </td>
-                <td style={{ fontSize: "0.9rem", color: "var(--ink-muted)" }}>
+                <td>
+                  <select
+                    className="admin-active-select"
+                    value={p.active === false ? "no" : "yes"}
+                    onChange={(e) =>
+                      setActive(p.id, e.target.value === "yes")
+                    }
+                  >
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </td>
+                <td className="admin-price-preview">
                   {formatInr(draft[p.id]?.pricePerKg ?? p.pricePerKg)} /{" "}
                   {formatInr(draft[p.id]?.bulkPricePerKg ?? p.bulkPricePerKg)}
+                </td>
+                <td>
+                  <div className="admin-row-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => startEdit(p)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={() => onDelete(p.id, p.name)}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <button type="button" className="btn btn-primary" onClick={saveAll}>
-          Save prices
-        </button>
-        {saved && (
-          <span className="alert alert-ok" style={{ marginLeft: "0.75rem" }}>
-            Saved
-          </span>
-        )}
+        <div className="admin-save-row">
+          <button type="button" className="btn btn-primary" onClick={saveAll}>
+            Save prices
+          </button>
+          {saved && <span className="alert alert-ok">Saved</span>}
+        </div>
       </div>
     </AdminShell>
   );
