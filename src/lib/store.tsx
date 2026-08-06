@@ -251,7 +251,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setState(local);
 
       const adminSession = sessionStorage.getItem(ADMIN_SESSION_KEY) === "1";
-      const sessPhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY);
+      // Customer session lives in localStorage so Razorpay payment-link
+      // callbacks (often a new tab) still see the logged-in user.
+      let sessPhone =
+        localStorage.getItem(CUSTOMER_SESSION_KEY) ||
+        sessionStorage.getItem(CUSTOMER_SESSION_KEY);
+      if (sessPhone) {
+        localStorage.setItem(CUSTOMER_SESSION_KEY, sessPhone);
+        sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
+      }
       if (adminSession && !getAdminApiSecret()) {
         sessionStorage.removeItem(ADMIN_SESSION_KEY);
         setAdminLoggedIn(false);
@@ -349,6 +357,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState(fresh);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    localStorage.removeItem(CUSTOMER_SESSION_KEY);
     sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
     setAdminLoggedIn(false);
     setCustomerPhone(null);
@@ -779,7 +788,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return { ...s, customers: nextCustomers };
       });
 
-      sessionStorage.setItem(CUSTOMER_SESSION_KEY, n);
+      localStorage.setItem(CUSTOMER_SESSION_KEY, n);
+      sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
       setCustomerPhone(n);
       setPendingOtp(null);
       return {
@@ -792,6 +802,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const logoutCustomer = useCallback(() => {
+    localStorage.removeItem(CUSTOMER_SESSION_KEY);
     sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
     setCustomerPhone(null);
   }, []);
