@@ -3,7 +3,7 @@ import type { AppState } from "./types";
 /** Demo defaults — replace prices later in Admin → Prices */
 export const DEFAULT_STATE: AppState = {
   config: {
-    shopName: "Chandhu Sea Food",
+    shopName: "Jaya Sankar Sea Food",
     tagline: "Fresh prawns from Nellore — never frozen",
     // Tiruchanoor hub — opposite DCC Bank / near Navajeevan
     hubLat: 13.6102,
@@ -12,9 +12,10 @@ export const DEFAULT_STATE: AppState = {
       "Opposite to DCC Bank and near Navajeevan, Tiruchanoor, 517503",
     retailDeliveryRadiusKm: 10,
     minKgForExtended: 2,
+    minKgForCod: 1,
     supportPhone: "+91 7032419218",
     supportWhatsApp: "+91 7032419218",
-    supportEmail: "help@chandhuseafood.in",
+    supportEmail: "help@jayasankarseafood.in",
     supportHours: "Daily 7:00 AM – 9:00 PM IST",
     adminUsername: "admin",
     adminPassword: "chandhu@123",
@@ -84,14 +85,14 @@ export const DEFAULT_STATE: AppState = {
   partners: [
     {
       id: "dp-1",
-      name: "Ravi Kumar",
-      phone: "+91 90000 11111",
+      name: "Chandhu",
+      phone: "+91 7032419218",
       active: true,
     },
     {
       id: "dp-2",
-      name: "Suresh Naidu",
-      phone: "+91 90000 22222",
+      name: "Jay",
+      phone: "+91 7075454505",
       active: true,
     },
     {

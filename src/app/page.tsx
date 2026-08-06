@@ -27,10 +27,39 @@ export default function HomePage() {
   return (
     <>
       <section className="hero">
+        <div className="ocean-wallpaper" aria-hidden>
+          <div className="ocean-depth" />
+          <div className="ocean-surface" />
+          <div className="ocean-caustics ocean-caustics-a" />
+          <div className="ocean-caustics ocean-caustics-b" />
+          <div className="ocean-rays" />
+          <div className="ocean-haze" />
+          <div className="ocean-midwave ocean-midwave-a">
+            <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
+              <path d="M0,60 C180,20 360,100 540,55 C720,10 900,95 1080,50 C1260,5 1350,70 1440,45 L1440,120 L0,120 Z" />
+            </svg>
+            <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
+              <path d="M0,60 C180,20 360,100 540,55 C720,10 900,95 1080,50 C1260,5 1350,70 1440,45 L1440,120 L0,120 Z" />
+            </svg>
+          </div>
+          <div className="ocean-midwave ocean-midwave-b">
+            <svg viewBox="0 0 1440 140" preserveAspectRatio="none">
+              <path d="M0,80 C200,30 400,110 600,70 C800,30 1000,115 1200,65 C1320,40 1380,85 1440,60 L1440,140 L0,140 Z" />
+            </svg>
+            <svg viewBox="0 0 1440 140" preserveAspectRatio="none">
+              <path d="M0,80 C200,30 400,110 600,70 C800,30 1000,115 1200,65 C1320,40 1380,85 1440,60 L1440,140 L0,140 Z" />
+            </svg>
+          </div>
+          <div className="ocean-particles">
+            <i /><i /><i /><i /><i /><i /><i /><i />
+          </div>
+          <div className="ocean-bubbles">
+            <span /><span /><span /><span /><span /><span /><span /><span />
+          </div>
+          <div className="ocean-vignette" />
+        </div>
         <div className="container hero-content">
-          <p className="badge" style={{ marginBottom: "1rem" }}>
-            Tirupati · Andhra Pradesh
-          </p>
+          <p className="badge">Tirupati · Andhra Pradesh</p>
           <h1 className="hero-brand">{config.shopName}</h1>
           <h2>{config.tagline}</h2>
           <p>
@@ -42,11 +71,7 @@ export default function HomePage() {
             <Link href="/order" className="btn btn-primary">
               Order fresh prawns
             </Link>
-            <a
-              href="#fresh"
-              className="btn btn-ghost"
-              style={{ color: "white", borderColor: "rgba(255,255,255,.35)" }}
-            >
+            <a href="#fresh" className="btn btn-ghost">
               Why we&apos;re different
             </a>
           </div>
@@ -73,6 +98,12 @@ export default function HomePage() {
 
       <section className="section" id="fresh">
         <div className="container">
+          <div className="fish-lane" aria-hidden>
+            <span className="jump-fish jump-fish-1">🐟</span>
+            <span className="jump-fish jump-fish-2">🐠</span>
+            <span className="jump-fish jump-fish-3">🐟</span>
+            <span className="jump-fish jump-fish-4">🐡</span>
+          </div>
           <div className="section-head">
             <h2>Fresh from Nellore. Never frozen.</h2>
             <p>

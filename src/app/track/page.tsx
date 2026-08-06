@@ -5,6 +5,10 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatInr, kgLabel } from "@/lib/defaults";
 import { fetchOrdersFromServer } from "@/lib/orders-api";
+import {
+  PAYMENT_METHOD_LABEL,
+  PAYMENT_STATUS_LABEL,
+} from "@/lib/payment-labels";
 import { useStore } from "@/lib/store";
 import type { CustomerOrder } from "@/lib/types";
 import { PageLoader } from "@/components/PageLoader";
@@ -152,6 +156,35 @@ function TrackInner() {
             Total {kgLabel(displayed.quantityKg)} · {formatInr(displayed.totalInr)} · ~
             {displayed.distanceKm} km from hub
           </p>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+            <span
+              className={`status-pill status-${displayed.paymentStatus ?? "pending"}`}
+            >
+              {PAYMENT_STATUS_LABEL[displayed.paymentStatus ?? "pending"]}
+            </span>
+            <span style={{ fontSize: "0.9rem", color: "var(--ink-muted)" }}>
+              {PAYMENT_METHOD_LABEL[displayed.paymentMethod ?? "cod"]}
+            </span>
+          </div>
+          {displayed.paymentMethod === "cod" &&
+            displayed.paymentStatus === "cod_pending" && (
+              <div className="alert alert-info">
+                Pay {formatInr(displayed.paymentAmountInr ?? displayed.totalInr)}{" "}
+                cash on delivery.
+              </div>
+            )}
+          {displayed.paymentMethod === "razorpay_upi_qr" &&
+            displayed.paymentStatus === "paid" && (
+              <div className="alert alert-ok">Payment confirmed via UPI.</div>
+            )}
+          {displayed.paymentMethod === "razorpay_upi_qr" &&
+            displayed.paymentStatus === "pending" && (
+              <div className="alert alert-warn">
+                UPI payment pending — complete payment if you haven’t already.
+              </div>
+            )}
+
           <p style={{ margin: 0 }}>
             <strong>{displayed.customerName}</strong> · {displayed.customerPhone}
             <br />

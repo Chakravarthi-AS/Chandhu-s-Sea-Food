@@ -6,6 +6,10 @@ import { PageLoader } from "@/components/PageLoader";
 import { formatInr, kgLabel } from "@/lib/defaults";
 import { useStore } from "@/lib/store";
 import type { CustomerOrder } from "@/lib/types";
+import {
+  PAYMENT_METHOD_LABEL,
+  PAYMENT_STATUS_LABEL,
+} from "@/lib/payment-labels";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_agent: "Pending",
@@ -16,7 +20,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function AdminOrdersPage() {
-  const { state, setOrderStatus, refreshOrdersFromServer, serverMenuConfigured, ready } =
+  const { state, setOrderStatus, updateOrderPayment, refreshOrdersFromServer, serverMenuConfigured, ready } =
     useStore();
   const [note, setNote] = useState<Record<string, string>>({});
   const [partnerPick, setPartnerPick] = useState<Record<string, string>>({});
@@ -107,6 +111,7 @@ export default function AdminOrdersPage() {
                 <th>Qty / Total</th>
                 <th>Distance</th>
                 <th>Status</th>
+                <th>Payment</th>
                 <th>Agent actions</th>
               </tr>
             </thead>
@@ -142,6 +147,31 @@ export default function AdminOrdersPage() {
                     <span className={`status-pill status-${o.status}`}>
                       {STATUS_LABEL[o.status]}
                     </span>
+                  </td>
+                  <td>
+                    <span
+                      className={`status-pill status-${o.paymentStatus ?? "pending"}`}
+                    >
+                      {PAYMENT_STATUS_LABEL[o.paymentStatus ?? "pending"]}
+                    </span>
+                    <div style={{ fontSize: "0.8rem", color: "var(--ink-muted)", marginTop: 4 }}>
+                      {PAYMENT_METHOD_LABEL[o.paymentMethod ?? "cod"]}
+                      {o.razorpayPaymentId ? (
+                        <>
+                          <br />
+                          {o.razorpayPaymentId}
+                        </>
+                      ) : null}
+                    </div>
+                    {o.paymentMethod === "razorpay_upi_qr" &&
+                      o.paymentStatus === "pending" && (
+                        <div
+                          className="alert alert-warn"
+                          style={{ marginTop: 6, padding: "0.35rem 0.5rem", fontSize: "0.78rem" }}
+                        >
+                          Awaiting UPI — don’t pack yet
+                        </div>
+                      )}
                   </td>
                   <td style={{ minWidth: 220 }}>
                     <textarea
@@ -223,6 +253,26 @@ export default function AdminOrdersPage() {
                           Mark delivered
                         </button>
                       )}
+                      {o.status === "delivered" &&
+                        o.paymentMethod === "cod" &&
+                        o.paymentStatus === "cod_pending" && (
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={actionBusyId === o.id}
+                            onClick={() => {
+                              if (actionBusyId) return;
+                              setActionBusyId(o.id);
+                              updateOrderPayment(o.id, {
+                                paymentStatus: "cod_collected",
+                                paidAt: new Date().toISOString(),
+                              });
+                              window.setTimeout(() => setActionBusyId(null), 600);
+                            }}
+                          >
+                            Mark cash collected
+                          </button>
+                        )}
                     </div>
                   </td>
                 </tr>

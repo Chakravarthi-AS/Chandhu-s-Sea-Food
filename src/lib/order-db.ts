@@ -1,4 +1,11 @@
-import type { CustomerOrder, OrderLineItem, OrderMode, OrderStatus } from "./types";
+import type {
+  CustomerOrder,
+  OrderLineItem,
+  OrderMode,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+} from "./types";
 
 export type OrderRow = {
   id: string;
@@ -21,6 +28,12 @@ export type OrderRow = {
   agent_note: string | null;
   delivery_partner_id: string | null;
   created_at: string;
+  payment_method: PaymentMethod | null;
+  payment_status: PaymentStatus | null;
+  payment_amount_inr: number | null;
+  razorpay_qr_id: string | null;
+  razorpay_payment_id: string | null;
+  paid_at: string | null;
 };
 
 export function orderToRow(o: CustomerOrder): OrderRow {
@@ -45,6 +58,12 @@ export function orderToRow(o: CustomerOrder): OrderRow {
     agent_note: o.agentNote ?? null,
     delivery_partner_id: o.deliveryPartnerId ?? null,
     created_at: o.createdAt,
+    payment_method: o.paymentMethod ?? null,
+    payment_status: o.paymentStatus ?? null,
+    payment_amount_inr: o.paymentAmountInr ?? o.totalInr,
+    razorpay_qr_id: o.razorpayQrId ?? null,
+    razorpay_payment_id: o.razorpayPaymentId ?? null,
+    paid_at: o.paidAt ?? null,
   };
 }
 
@@ -62,6 +81,10 @@ export function rowToOrder(row: OrderRow): CustomerOrder {
             lineTotalInr: row.total_inr,
           },
         ];
+  const method: PaymentMethod = row.payment_method ?? "cod";
+  const status: PaymentStatus =
+    row.payment_status ??
+    (method === "cod" ? "cod_pending" : "pending");
   return {
     id: row.id,
     trackingCode: row.tracking_code,
@@ -83,5 +106,11 @@ export function rowToOrder(row: OrderRow): CustomerOrder {
     agentNote: row.agent_note ?? undefined,
     deliveryPartnerId: row.delivery_partner_id ?? undefined,
     createdAt: row.created_at,
+    paymentMethod: method,
+    paymentStatus: status,
+    paymentAmountInr: row.payment_amount_inr ?? row.total_inr,
+    razorpayQrId: row.razorpay_qr_id ?? undefined,
+    razorpayPaymentId: row.razorpay_payment_id ?? undefined,
+    paidAt: row.paid_at ?? undefined,
   };
 }

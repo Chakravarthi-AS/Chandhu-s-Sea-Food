@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 
 function greetingForHour(hour: number): string {
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
+  if (hour >= 9 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 14) return "Good afternoon";
+  if (hour >= 17 && hour < 19) return "Good evening";
+  return "Welcome Back";
 }
 
 export function CustomerGreeting() {
@@ -28,7 +29,7 @@ export function CustomerGreeting() {
     <div className="greeting-bar" role="status">
       <div className="container greeting-inner">
         <span className="greeting-emoji" aria-hidden>
-          {hour < 12 ? "🌅" : hour < 17 ? "☀️" : "🌙"}
+          {hour >= 9 && hour < 12 ? "🌅" : hour >= 12 && hour < 14 ? "☀️" : hour >= 17 && hour < 19 ? "🌙" : "🌙"}
         </span>
         <p className="greeting-text">
           {greeting}, <strong className="greeting-name">{customer.name}</strong>

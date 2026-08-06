@@ -128,6 +128,12 @@ export async function PATCH(req: NextRequest) {
     status?: CustomerOrder["status"];
     agentNote?: string;
     deliveryPartnerId?: string;
+    paymentStatus?: CustomerOrder["paymentStatus"];
+    paymentMethod?: CustomerOrder["paymentMethod"];
+    paymentAmountInr?: number;
+    razorpayQrId?: string;
+    razorpayPaymentId?: string;
+    paidAt?: string;
   };
   try {
     body = await req.json();
@@ -135,8 +141,23 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (!body.id || !body.status) {
-    return NextResponse.json({ error: "id and status required" }, { status: 400 });
+  if (!body.id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+
+  const hasPaymentPatch =
+    body.paymentStatus !== undefined ||
+    body.paymentMethod !== undefined ||
+    body.razorpayQrId !== undefined ||
+    body.razorpayPaymentId !== undefined ||
+    body.paidAt !== undefined ||
+    body.paymentAmountInr !== undefined;
+
+  if (!body.status && !hasPaymentPatch && body.agentNote === undefined && body.deliveryPartnerId === undefined) {
+    return NextResponse.json(
+      { error: "Nothing to update" },
+      { status: 400 }
+    );
   }
 
   const supabase = getSupabaseAdmin();
@@ -160,11 +181,27 @@ export async function PATCH(req: NextRequest) {
   const order = rowToOrder(existing as ReturnType<typeof orderToRow>);
   const updated: CustomerOrder = {
     ...order,
-    status: body.status,
+    ...(body.status !== undefined ? { status: body.status } : {}),
     ...(body.agentNote !== undefined ? { agentNote: body.agentNote } : {}),
     ...(body.deliveryPartnerId !== undefined
       ? { deliveryPartnerId: body.deliveryPartnerId }
       : {}),
+    ...(body.paymentStatus !== undefined
+      ? { paymentStatus: body.paymentStatus }
+      : {}),
+    ...(body.paymentMethod !== undefined
+      ? { paymentMethod: body.paymentMethod }
+      : {}),
+    ...(body.paymentAmountInr !== undefined
+      ? { paymentAmountInr: body.paymentAmountInr }
+      : {}),
+    ...(body.razorpayQrId !== undefined
+      ? { razorpayQrId: body.razorpayQrId }
+      : {}),
+    ...(body.razorpayPaymentId !== undefined
+      ? { razorpayPaymentId: body.razorpayPaymentId }
+      : {}),
+    ...(body.paidAt !== undefined ? { paidAt: body.paidAt } : {}),
   };
 
   const row = orderToRow(updated);

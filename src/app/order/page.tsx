@@ -16,8 +16,11 @@ import {
   tonsToKg,
 } from "@/lib/defaults";
 import { useStore } from "@/lib/store";
-import type { OrderLineItem, OrderMode } from "@/lib/types";
+import type { OrderLineItem, OrderMode, PaymentMethod } from "@/lib/types";
+import { defaultPaymentFields } from "@/lib/payment-labels";
 import { CustomerOtpModal } from "@/components/CustomerOtpModal";
+import { CelebrationModal } from "@/components/CelebrationModal";
+import { PaymentQrPanel } from "@/components/PaymentQrPanel";
 import { PageLoader } from "@/components/PageLoader";
 
 const DeliveryMap = dynamic(
@@ -57,6 +60,7 @@ function OrderForm() {
     saveCustomerLocation,
     updateCustomerName,
     getOrderByTracking,
+    updateOrderPayment,
   } = useStore();
   const { config, products } = state;
   const search = useSearchParams();
@@ -85,6 +89,19 @@ function OrderForm() {
   const [error, setError] = useState<string | null>(null);
   const [showOtp, setShowOtp] = useState(false);
   const [placing, setPlacing] = useState(false);
+  const [celebrateOpen, setCelebrateOpen] = useState(false);
+  const [celebrateName, setCelebrateName] = useState("");
+  const [payStep, setPayStep] = useState(false);
+  const [pendingAuth, setPendingAuth] = useState<{
+    phone: string;
+    name: string;
+  } | null>(null);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const [qrOrderId, setQrOrderId] = useState<string | null>(null);
+  const [qrId, setQrId] = useState<string | null>(null);
+  const [qrWaiting, setQrWaiting] = useState(false);
+  const [qrError, setQrError] = useState<string | null>(null);
 
   const placedFromUrl = search.get("placed");
   const placedOrder = useMemo(() => {
@@ -171,6 +188,7 @@ function OrderForm() {
   const outsideRetailRadius = distanceKm > config.retailDeliveryRadiusKm;
   const blockedRetailOutside = underMinWeight && outsideRetailRadius;
   const willAutoConfirm = !underMinWeight;
+  const codAllowed = totalKg >= (config.minKgForCod ?? 1);
 
   const draftQty =
     draftMode === "retail"
@@ -258,7 +276,88 @@ function OrderForm() {
     }));
   }
 
-  async function commitOrder(loggedPhone: string, loggedName: string) {
+  function finishSuccess(order: {
+    trackingCode: string;
+    status: string;
+    customerName: string;
+  }) {
+    setAutoConfirmed(order.status === "confirmed");
+    setSubmittedCode(order.trackingCode);
+    setCelebrateName(order.customerName.trim() || "there");
+    setCelebrateOpen(true);
+    setShowOtp(false);
+    setPayStep(false);
+    setQrOpen(false);
+    setQrWaiting(false);
+    setError(null);
+    router.replace(`/order?placed=${order.trackingCode}`, { scroll: false });
+  }
+
+  async function startUpiQr(
+    order: {
+      id: string;
+      trackingCode: string;
+      totalInr: number;
+    },
+    force = false
+  ) {
+    setQrOpen(true);
+    setQrWaiting(true);
+    setQrError(null);
+    setQrOrderId(order.id);
+    setQrId(null);
+    setQrImageUrl(null);
+
+    const res = await fetch("/api/payments/create-qr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId: order.id,
+        trackingCode: order.trackingCode,
+        amountInr: order.totalInr,
+        description: `Order ${order.trackingCode}`,
+        force,
+      }),
+    });
+    const data = (await res.json()) as {
+      error?: string;
+      alreadyPaid?: boolean;
+      imageUrl?: string;
+      qrId?: string;
+    };
+    if (!res.ok) {
+      setQrError(data.error || "Could not create UPI QR. Check Razorpay keys.");
+      setQrWaiting(false);
+      return;
+    }
+    if (data.alreadyPaid) {
+      updateOrderPayment(order.id, {
+        paymentStatus: "paid",
+        paidAt: new Date().toISOString(),
+      });
+      finishSuccess({
+        trackingCode: order.trackingCode,
+        status: "confirmed",
+        customerName: pendingAuth?.name || customer?.name || name,
+      });
+      return;
+    }
+    if (data.qrId) {
+      setQrId(data.qrId);
+      updateOrderPayment(order.id, { razorpayQrId: data.qrId });
+    }
+    if (data.imageUrl) setQrImageUrl(data.imageUrl);
+    else {
+      setQrError("QR created but image was missing. Tap Try again.");
+      setQrWaiting(false);
+    }
+  }
+
+  async function commitOrder(
+    loggedPhone: string,
+    loggedName: string,
+    method: PaymentMethod
+  ) {
     if (placing) return;
     setPlacing(true);
     try {
@@ -267,8 +366,14 @@ function OrderForm() {
       if (!items.length) {
         setError("Add at least one item before placing the order.");
         setShowOtp(false);
+        setPayStep(false);
         return;
       }
+      if (method === "cod" && totalKg < (config.minKgForCod ?? 1)) {
+        setError(`Cash on delivery needs at least ${config.minKgForCod ?? 1} kg.`);
+        return;
+      }
+
       const summaryName =
         items.length === 1
           ? items[0].productName
@@ -276,6 +381,7 @@ function OrderForm() {
       const hasBulk = items.some((i) => i.mode === "bulk");
       const avgRate =
         totalKg > 0 ? Math.round(totalInr / totalKg) : items[0]?.pricePerKg ?? 0;
+      const payment = defaultPaymentFields(method, totalInr);
 
       const order = await placeOrder({
         customerId: customer?.id,
@@ -292,6 +398,7 @@ function OrderForm() {
         lat,
         lng,
         distanceKm: Math.round(distanceKm * 10) / 10,
+        ...payment,
       });
 
       if (!order?.trackingCode) {
@@ -312,18 +419,27 @@ function OrderForm() {
         );
       }, 0);
 
-      setAutoConfirmed(order.status === "confirmed");
-      setSubmittedCode(order.trackingCode);
-      setShowOtp(false);
-      setError(null);
-      router.replace(`/order?placed=${order.trackingCode}`, { scroll: false });
+      if (method === "cod") {
+        finishSuccess(order);
+        return;
+      }
+
+      setPendingAuth({ phone: loggedPhone, name: loggedName });
+      await startUpiQr(order);
     } catch (err) {
       console.error(err);
-      setError("Could not place order after login. Please try submit again.");
+      setError("Could not place order. Please try again.");
       setShowOtp(false);
     } finally {
       setPlacing(false);
     }
+  }
+
+  function enterPayStep(loggedPhone: string, loggedName: string) {
+    setPendingAuth({ phone: loggedPhone, name: loggedName });
+    setPayStep(true);
+    setShowOtp(false);
+    setError(null);
   }
 
   function onSubmit(e: React.FormEvent) {
@@ -339,8 +455,73 @@ function OrderForm() {
       setShowOtp(true);
       return;
     }
-    void commitOrder(customer.phone, name.trim() || customer.name);
+    enterPayStep(customer.phone, name.trim() || customer.name);
   }
+
+  useEffect(() => {
+    if (!qrOpen || !qrWaiting || !qrOrderId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const params = new URLSearchParams({ orderId: qrOrderId });
+        if (qrId) params.set("qrId", qrId);
+        const res = await fetch(`/api/payments/status?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const data = (await res.json()) as {
+          paymentStatus?: string;
+          paidAt?: string;
+          razorpayPaymentId?: string;
+          error?: string;
+        };
+        if (cancelled || !res.ok) return;
+        if (data.paymentStatus === "paid") {
+          updateOrderPayment(qrOrderId, {
+            paymentStatus: "paid",
+            paidAt: data.paidAt || new Date().toISOString(),
+            razorpayPaymentId: data.razorpayPaymentId,
+          });
+          const tracking =
+            state.orders.find((o) => o.id === qrOrderId)?.trackingCode ||
+            submittedCode;
+          if (tracking) {
+            finishSuccess({
+              trackingCode: tracking,
+              status:
+                state.orders.find((o) => o.id === qrOrderId)?.status ||
+                "confirmed",
+              customerName: pendingAuth?.name || customer?.name || name,
+            });
+          }
+          return;
+        }
+        if (data.paymentStatus === "expired") {
+          updateOrderPayment(qrOrderId, { paymentStatus: "expired" });
+          setQrError("QR expired. Tap Try again to generate a new one.");
+          setQrWaiting(false);
+        }
+      } catch {
+        /* keep polling */
+      }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [
+    qrOpen,
+    qrWaiting,
+    qrOrderId,
+    qrId,
+    updateOrderPayment,
+    state.orders,
+    submittedCode,
+    pendingAuth,
+    customer,
+    name,
+  ]);
 
   if (!ready) {
     return null;
@@ -354,6 +535,8 @@ function OrderForm() {
   const successQty = placedOrder?.quantityKg ?? totalKg;
 
   if (successCode) {
+    const pay = placedOrder?.paymentStatus;
+    const method = placedOrder?.paymentMethod;
     return (
       <div className="container section" style={{ maxWidth: 640 }}>
         <div className="panel">
@@ -370,6 +553,24 @@ function OrderForm() {
               ? `Total weight is ${formatQtyParts(successQty)} (≥ ${config.minKgForExtended} kg), so this order was accepted automatically.`
               : `Orders under ${config.minKgForExtended} kg need agent confirmation before delivery.`}
           </p>
+          {method === "cod" || pay === "cod_pending" || pay === "cod_collected" ? (
+            <div className="alert alert-info" style={{ margin: "0.75rem 0" }}>
+              {pay === "cod_collected"
+                ? "Cash collected on delivery."
+                : `Cash on delivery — pay ${formatInr(placedOrder?.paymentAmountInr ?? placedOrder?.totalInr ?? totalInr)} when your order arrives.`}
+            </div>
+          ) : pay === "paid" ? (
+            <div className="alert alert-ok" style={{ margin: "0.75rem 0" }}>
+              UPI payment received
+              {placedOrder?.paidAt
+                ? ` · ${new Date(placedOrder.paidAt).toLocaleString()}`
+                : ""}
+            </div>
+          ) : pay === "pending" ? (
+            <div className="alert alert-warn" style={{ margin: "0.75rem 0" }}>
+              UPI payment still pending. Complete payment to confirm.
+            </div>
+          ) : null}
           {placedOrder?.items?.length ? (
             <ul style={{ color: "var(--ink-muted)", paddingLeft: "1.1rem" }}>
               {placedOrder.items.map((item, i) => (
@@ -402,12 +603,134 @@ function OrderForm() {
             </Link>
           </div>
         </div>
+
+        <CelebrationModal
+          open={celebrateOpen}
+          title="Thanks for ordering!"
+          message={`Thank you, ${celebrateName || "friend"}.`}
+          detail={
+            method === "cod"
+              ? "Pay cash when your order arrives. Track anytime from your account."
+              : "Your UPI payment is confirmed — track your order anytime."
+          }
+          confirmLabel="View order details"
+          onConfirm={() => setCelebrateOpen(false)}
+        />
+      </div>
+    );
+  }
+
+  if (qrOpen) {
+    return (
+      <div className="container section" style={{ maxWidth: 520 }}>
+        <PaymentQrPanel
+          amountInr={totalInr}
+          imageUrl={qrImageUrl}
+          waiting={qrWaiting}
+          error={qrError}
+          onCancel={() => {
+            setQrOpen(false);
+            setQrWaiting(false);
+            setPayStep(true);
+            setQrError(null);
+          }}
+          onRetry={() => {
+            if (!qrOrderId) return;
+            const order = state.orders.find((o) => o.id === qrOrderId);
+            if (!order) return;
+            void startUpiQr(order, true);
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (payStep && pendingAuth) {
+    return (
+      <div className="container section" style={{ maxWidth: 560 }}>
+        <div className="panel">
+          <span className="badge">Checkout</span>
+          <h1 style={{ marginTop: "0.65rem" }}>Choose payment</h1>
+          <p style={{ color: "var(--ink-muted)" }}>
+            Total <strong>{formatQtyParts(totalKg)}</strong> ·{" "}
+            <strong>{formatInr(totalInr)}</strong>
+          </p>
+          {error && <div className="alert alert-warn">{error}</div>}
+          {placing && (
+            <div className="busy-banner">
+              <span className="spinner spinner-sm" aria-hidden />
+              Preparing payment…
+            </div>
+          )}
+          <div className="pay-choice-grid">
+            <button
+              type="button"
+              className={`btn btn-primary${placing ? " is-loading" : ""}`}
+              disabled={placing}
+              onClick={() => {
+                const existing = qrOrderId
+                  ? state.orders.find(
+                      (o) =>
+                        o.id === qrOrderId &&
+                        o.paymentMethod === "razorpay_upi_qr" &&
+                        o.paymentStatus !== "paid"
+                    )
+                  : undefined;
+                if (existing) {
+                  void startUpiQr(existing, true);
+                  return;
+                }
+                void commitOrder(
+                  pendingAuth.phone,
+                  pendingAuth.name,
+                  "razorpay_upi_qr"
+                );
+              }}
+            >
+              {placing ? "Please wait…" : `Pay ${formatInr(totalInr)} with UPI`}
+            </button>
+            {codAllowed ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={placing}
+                onClick={() =>
+                  void commitOrder(pendingAuth.phone, pendingAuth.name, "cod")
+                }
+              >
+                Cash on delivery
+              </button>
+            ) : (
+              <p className="pay-cod-hint">
+                Cash on delivery available from {config.minKgForCod ?? 1} kg
+                (your cart is {formatQtyParts(totalKg)}).
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ marginTop: "1rem" }}
+            disabled={placing}
+            onClick={() => {
+              setPayStep(false);
+              setPendingAuth(null);
+            }}
+          >
+            Back to cart
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container section">
+    <div className="container section order-scene">
+      <div className="prawn-lane" aria-hidden>
+        <span className="jump-prawn jump-prawn-1">🦐</span>
+        <span className="jump-prawn jump-prawn-2">🦐</span>
+        <span className="jump-prawn jump-prawn-3">🦐</span>
+      </div>
       <div className="section-head">
         <h1>Place your order</h1>
         <p>
@@ -731,16 +1054,12 @@ function OrderForm() {
             {placing ? (
               <>
                 <span className="spinner spinner-sm spinner-light" aria-hidden />
-                Placing order…
+                Please wait…
               </>
             ) : customer ? (
-              willAutoConfirm ? (
-                "Place order (auto-confirm)"
-              ) : (
-                "Submit for agent confirmation"
-              )
+              "Continue to payment"
             ) : (
-              "Login with OTP & place order"
+              "Login with OTP & continue"
             )}
           </button>
         </div>
@@ -779,14 +1098,14 @@ function OrderForm() {
         initialPhone={phone}
         initialName={name}
         title="Confirm with mobile OTP"
-        subtitle="Verify your number to place this order. We’ll save order history and this delivery location."
+        subtitle="Enter your mobile number. We’ll only ask your name if you’re new."
+        skipWelcome
         onClose={() => setShowOtp(false)}
         onSuccess={(loggedPhone, loggedName) => {
           setPhone(loggedPhone);
           setName(loggedName);
-          // Defer so React finishes customer login state before placing order
           window.setTimeout(() => {
-            void commitOrder(loggedPhone, loggedName);
+            enterPayStep(loggedPhone, loggedName);
           }, 0);
         }}
       />

@@ -40,9 +40,15 @@ export async function createOrderOnServer(order: CustomerOrder): Promise<boolean
 export async function patchOrderOnServer(
   id: string,
   patch: {
-    status: CustomerOrder["status"];
+    status?: CustomerOrder["status"];
     agentNote?: string;
     deliveryPartnerId?: string;
+    paymentStatus?: CustomerOrder["paymentStatus"];
+    paymentMethod?: CustomerOrder["paymentMethod"];
+    paymentAmountInr?: number;
+    razorpayQrId?: string;
+    razorpayPaymentId?: string;
+    paidAt?: string;
   }
 ): Promise<boolean> {
   const res = await fetch("/api/orders", {

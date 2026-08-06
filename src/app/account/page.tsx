@@ -6,6 +6,7 @@ import { CustomerOtpModal } from "@/components/CustomerOtpModal";
 import { PageLoader } from "@/components/PageLoader";
 import { formatInr, formatPhoneDisplay, kgLabel } from "@/lib/defaults";
 import { useStore } from "@/lib/store";
+import { PAYMENT_STATUS_LABEL } from "@/lib/payment-labels";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_agent: "Pending agent",
@@ -68,8 +69,10 @@ export default function AccountPage() {
             </Link>
           </p>
         </div>
-        <CustomerOtpModal
+          <CustomerOtpModal
           open={showLogin}
+          title="Customer login"
+          subtitle="Enter your mobile number. We’ll ask your name only if you’re new."
           onClose={() => setShowLogin(false)}
           onSuccess={() => setShowLogin(false)}
         />
@@ -131,9 +134,16 @@ export default function AccountPage() {
                     }}
                   >
                     <strong>{o.trackingCode}</strong>
-                    <span className={`status-pill status-${o.status}`}>
-                      {STATUS_LABEL[o.status]}
-                    </span>
+                    <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                      <span className={`status-pill status-${o.status}`}>
+                        {STATUS_LABEL[o.status]}
+                      </span>
+                      <span
+                        className={`status-pill status-${o.paymentStatus ?? "pending"}`}
+                      >
+                        {PAYMENT_STATUS_LABEL[o.paymentStatus ?? "pending"]}
+                      </span>
+                    </div>
                   </div>
                   <div style={{ fontSize: "0.92rem", color: "var(--ink-muted)" }}>
                     {o.items?.length > 1

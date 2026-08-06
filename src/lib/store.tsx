@@ -81,6 +81,20 @@ type StoreContextValue = {
     status: CustomerOrder["status"],
     extras?: { agentNote?: string; deliveryPartnerId?: string }
   ) => void;
+  updateOrderPayment: (
+    orderId: string,
+    patch: Partial<
+      Pick<
+        CustomerOrder,
+        | "paymentStatus"
+        | "paymentMethod"
+        | "razorpayQrId"
+        | "razorpayPaymentId"
+        | "paidAt"
+        | "paymentAmountInr"
+      >
+    >
+  ) => void;
   getOrderByTracking: (code: string) => CustomerOrder | undefined;
   getProduct: (id: string) => Product | undefined;
   loginAdmin: (username: string, password: string) => Promise<boolean>;
@@ -176,6 +190,8 @@ function loadState(): AppState {
           !parsed.config.hubAddress.toLowerCase().includes("alipiri")
             ? (parsed.config.hubLng ?? DEFAULT_STATE.config.hubLng)
             : DEFAULT_STATE.config.hubLng,
+        minKgForCod:
+          parsed.config?.minKgForCod ?? DEFAULT_STATE.config.minKgForCod,
         adminUsername:
           parsed.config?.adminUsername ?? DEFAULT_STATE.config.adminUsername,
         adminPassword:
@@ -198,6 +214,9 @@ function loadState(): AppState {
                   lineTotalInr: o.totalInr,
                 } satisfies OrderLineItem,
               ],
+        paymentMethod: o.paymentMethod ?? "cod",
+        paymentStatus: o.paymentStatus ?? "cod_pending",
+        paymentAmountInr: o.paymentAmountInr ?? o.totalInr,
       })),
       customers: parsed.customers ?? [],
     };
@@ -444,6 +463,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         agentNote: autoConfirm
           ? `Auto-confirmed — total ${order.quantityKg} kg (≥ ${state.config.minKgForExtended} kg).`
           : undefined,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        paymentAmountInr: order.paymentAmountInr ?? order.totalInr,
+        razorpayQrId: order.razorpayQrId,
+        razorpayPaymentId: order.razorpayPaymentId,
+        paidAt: order.paidAt,
       };
       setState((s) => ({ ...s, orders: [created, ...s.orders] }));
       if (serverMenuConfigured) {
@@ -495,6 +520,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           status,
           agentNote: extras?.agentNote,
           deliveryPartnerId: extras?.deliveryPartnerId,
+        });
+      }
+    },
+    [serverMenuConfigured]
+  );
+
+  const updateOrderPayment = useCallback(
+    (
+      orderId: string,
+      patch: Partial<
+        Pick<
+          CustomerOrder,
+          | "paymentStatus"
+          | "paymentMethod"
+          | "razorpayQrId"
+          | "razorpayPaymentId"
+          | "paidAt"
+          | "paymentAmountInr"
+        >
+      >
+    ) => {
+      setState((s) => ({
+        ...s,
+        orders: s.orders.map((o) =>
+          o.id === orderId ? { ...o, ...patch } : o
+        ),
+      }));
+      // Cloud payment writes for admin actions (COD collected). UPI paid is
+      // written by /api/payments/status and webhook.
+      if (serverMenuConfigured && getAdminApiSecret()) {
+        void patchOrderOnServer(orderId, {
+          paymentStatus: patch.paymentStatus,
+          razorpayQrId: patch.razorpayQrId,
+          razorpayPaymentId: patch.razorpayPaymentId,
+          paidAt: patch.paidAt,
+          paymentMethod: patch.paymentMethod,
+          paymentAmountInr: patch.paymentAmountInr,
         });
       }
     },
@@ -780,6 +842,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removePartner,
       placeOrder,
       setOrderStatus,
+      updateOrderPayment,
       getOrderByTracking,
       getProduct,
       loginAdmin,
@@ -813,6 +876,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removePartner,
       placeOrder,
       setOrderStatus,
+      updateOrderPayment,
       getOrderByTracking,
       getProduct,
       loginAdmin,

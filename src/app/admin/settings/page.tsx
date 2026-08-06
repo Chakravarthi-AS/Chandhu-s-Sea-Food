@@ -127,6 +127,19 @@ export default function AdminSettingsPage() {
           </div>
         </div>
         <div className="form-row">
+          <label>Min kg for cash on delivery</label>
+          <input
+            type="number"
+            min={0.5}
+            step={0.5}
+            value={form.minKgForCod ?? 1}
+            onChange={(e) => set("minKgForCod", Number(e.target.value))}
+          />
+          <p style={{ margin: "0.35rem 0 0", fontSize: "0.85rem", color: "var(--ink-muted)" }}>
+            Carts below this weight can only pay online via UPI QR.
+          </p>
+        </div>
+        <div className="form-row">
           <label>Support phone</label>
           <input
             value={form.supportPhone}

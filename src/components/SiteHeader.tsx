@@ -123,10 +123,7 @@ export function SiteHeader() {
 
       {!isAdmin && (
         <nav className="mobile-tabbar" aria-label="Quick navigation">
-          <Link
-            href="/"
-            className={pathname === "/" ? "active" : undefined}
-          >
+          <Link href="/" className={pathname === "/" ? "active" : undefined}>
             <span aria-hidden>🏠</span>
             Home
           </Link>
@@ -148,7 +145,7 @@ export function SiteHeader() {
             href="/account"
             className={pathname.startsWith("/account") ? "active" : undefined}
           >
-            <span aria-hidden>👤</span>
+            <span aria-hidden>{customer ? "👤" : "🔐"}</span>
             {customer ? "Account" : "Login"}
           </Link>
         </nav>

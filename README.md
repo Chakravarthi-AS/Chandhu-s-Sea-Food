@@ -14,10 +14,11 @@ Website demo for **Chandhu Sea Food** — fresh prawns & seafood shop in Tirupat
 Admin menu items can sync for **everyone** on the live site (not only your browser).
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. **SQL Editor** → run `supabase/schema.sql` from this repo (new projects), or `supabase/migration-v2-orders-customers.sql` if `products` already exists.
+2. **SQL Editor** → run `supabase/schema.sql` from this repo (new projects), or apply `supabase/migration-v2-orders-customers.sql` then `supabase/migration-v3-payments.sql` if you already have older tables.
 3. **Project Settings → API Keys** → copy URL, **anon / publishable** key, and **service role** key (LEGACY JWT `eyJ...` for `SUPABASE_SERVICE_ROLE_KEY` if `sb_secret_` fails).
 4. Copy `.env.example` to `.env.local` and fill values (never commit `.env.local`).
-5. On **Vercel** → **Settings → Environment Variables** → add at least:
+5. **Razorpay (UPI QR):** add `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`. Webhook URL: `https://YOUR_DOMAIN/api/payments/webhook` (enable `qr_code.credited`).
+6. On **Vercel** → **Settings → Environment Variables** → add at least:
 
    | Variable | Required for cloud menu |
    |----------|-------------------------|
@@ -25,9 +26,11 @@ Admin menu items can sync for **everyone** on the live site (not only your brows
    | `SUPABASE_SERVICE_ROLE_KEY` | Yes |
    | `ADMIN_API_SECRET` | Yes (same as admin password) |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Optional today (set for parity with local) |
+   | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Yes for UPI QR |
+   | `RAZORPAY_WEBHOOK_SECRET` | Yes for auto payment confirm |
 
    Then **Redeploy** production.
-6. Log in to **Admin** on the live site (so API auth works), then add/edit menu items.
+7. Log in to **Admin** on the live site (so API auth works), then add/edit menu items.
 
 **Cloud tables:** `products` (menu), `admin_users` (portal login), `customers` (phone + saved addresses), `orders` (all orders; customers see theirs by phone after OTP login).
 
@@ -39,6 +42,7 @@ Without Supabase env vars, the app still runs with browser-only storage (localho
 
 - Retail: **kg + grams** dropdowns (e.g. 4 kg + 500 g = 4.5 kg)
 - Multi-item cart in one order
+- **Pay with UPI** (Razorpay QR, ~0.99%) with webhook/poll confirm, or **COD from 1 kg**
 - Orders **under 2 kg** → agent confirmation; **≥ 2 kg** → auto-accept
 - **Resend OTP** on customer login
 - App bar shows customer **name** after login

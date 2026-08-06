@@ -77,7 +77,13 @@ create table if not exists public.orders (
   status text not null,
   agent_note text,
   delivery_partner_id text,
-  created_at timestamptz not null
+  created_at timestamptz not null,
+  payment_method text,
+  payment_status text,
+  payment_amount_inr integer,
+  razorpay_qr_id text,
+  razorpay_payment_id text,
+  paid_at timestamptz
 );
 
 alter table public.orders enable row level security;
@@ -85,3 +91,14 @@ alter table public.orders enable row level security;
 create index if not exists orders_customer_phone_idx on public.orders (customer_phone);
 create index if not exists orders_created_at_idx on public.orders (created_at desc);
 create index if not exists orders_tracking_idx on public.orders (tracking_code);
+
+-- If `orders` already existed without payment columns, add them (idempotent).
+alter table public.orders add column if not exists payment_method text;
+alter table public.orders add column if not exists payment_status text;
+alter table public.orders add column if not exists payment_amount_inr integer;
+alter table public.orders add column if not exists razorpay_qr_id text;
+alter table public.orders add column if not exists razorpay_payment_id text;
+alter table public.orders add column if not exists paid_at timestamptz;
+
+create index if not exists orders_razorpay_qr_idx on public.orders (razorpay_qr_id);
+create index if not exists orders_payment_status_idx on public.orders (payment_status);

@@ -6,6 +6,15 @@ export type OrderStatus =
   | "delivered"
   | "rejected";
 
+export type PaymentMethod = "razorpay_upi_qr" | "cod";
+export type PaymentStatus =
+  | "pending"
+  | "paid"
+  | "failed"
+  | "expired"
+  | "cod_pending"
+  | "cod_collected";
+
 export interface Product {
   id: string;
   name: string;
@@ -36,6 +45,8 @@ export interface ShopConfig {
    * At/above this weight → auto-confirmed.
    */
   minKgForExtended: number;
+  /** Cash on delivery allowed when total cart kg is at/above this */
+  minKgForCod: number;
   supportPhone: string;
   supportWhatsApp: string;
   supportEmail: string;
@@ -106,6 +117,12 @@ export interface CustomerOrder {
   agentNote?: string;
   deliveryPartnerId?: string;
   trackingCode: string;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  paymentAmountInr: number;
+  razorpayQrId?: string;
+  razorpayPaymentId?: string;
+  paidAt?: string;
 }
 
 export interface AppState {
