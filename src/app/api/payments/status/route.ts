@@ -5,6 +5,7 @@ import {
   markOrderPaid,
   patchOrderPayment,
 } from "@/lib/payment-db";
+import { payLog } from "@/lib/pay-log";
 import {
   fetchPaymentLink,
   fetchUpiQr,
@@ -30,6 +31,7 @@ export async function GET(req: NextRequest) {
       paymentStatus = order.paymentStatus;
       providerId = order.razorpayQrId || providerId;
       if (order.paymentStatus === "paid") {
+        payLog("status", "Already paid in DB", { orderId });
         return NextResponse.json({
           ok: true,
           paymentStatus: "paid",
@@ -41,6 +43,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!providerId) {
+    payLog("status", "No provider id yet", { orderId, paymentStatus });
     return NextResponse.json({
       ok: true,
       paymentStatus: paymentStatus ?? "pending",
@@ -58,10 +61,19 @@ export async function GET(req: NextRequest) {
   try {
     if (providerId.startsWith("plink_")) {
       const link = await fetchPaymentLink(providerId);
+      payLog("status", "Payment link poll", {
+        linkId: providerId,
+        status: link.status,
+        amountPaid: link.amount_paid,
+      });
       if (link.status === "paid" || link.amount_paid > 0) {
         const paid = await markOrderPaid({
           orderId: orderId || undefined,
           qrId: providerId,
+        });
+        payLog("status", "Marked paid via payment link", {
+          orderId: paid?.id,
+          orderStatus: paid?.status,
         });
         return NextResponse.json({
           ok: true,
@@ -96,10 +108,19 @@ export async function GET(req: NextRequest) {
     }
 
     const qr = await fetchUpiQr(providerId);
+    payLog("status", "UPI QR poll", {
+      qrId: providerId,
+      status: qr.status,
+      paymentsCount: qr.payments_count_received,
+    });
     if (qr.payments_count_received > 0) {
       const paid = await markOrderPaid({
         orderId: orderId || undefined,
         qrId: providerId,
+      });
+      payLog("status", "Marked paid via UPI QR", {
+        orderId: paid?.id,
+        orderStatus: paid?.status,
       });
       return NextResponse.json({
         ok: true,
@@ -134,6 +155,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Status check failed";
+    payLog("status", "Poll error", message, "error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -106,7 +106,6 @@ export function SiteHeader() {
                     Login
                   </Link>
                 )}
-                {themeToggle}
                 <Link
                   href="/admin"
                   className="btn btn-ghost btn-sm"
@@ -114,11 +113,11 @@ export function SiteHeader() {
                 >
                   Admin
                 </Link>
+                {themeToggle}
               </>
             ) : (
               <>
                 <Link href="/">← Storefront</Link>
-                {themeToggle}
                 {adminLoggedIn && (
                   <>
                     <Link href="/admin">Dashboard</Link>
@@ -131,6 +130,7 @@ export function SiteHeader() {
                     </button>
                   </>
                 )}
+                {themeToggle}
               </>
             )}
           </nav>

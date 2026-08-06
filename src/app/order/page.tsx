@@ -327,7 +327,17 @@ function OrderForm() {
       imageUrl?: string;
       payUrl?: string;
       qrId?: string;
+      mode?: string;
+      notice?: string;
     };
+    console.log("[pay:client] create-qr response", {
+      ok: res.ok,
+      status: res.status,
+      mode: data.mode,
+      qrId: data.qrId,
+      notice: data.notice,
+      error: data.error,
+    });
     if (!res.ok) {
       setQrError(data.error || "Could not create UPI QR. Check Razorpay keys.");
       setQrWaiting(false);
@@ -479,6 +489,10 @@ function OrderForm() {
           error?: string;
         };
         if (cancelled || !res.ok) return;
+        console.log("[pay:client] status poll", {
+          paymentStatus: data.paymentStatus,
+          orderId: qrOrderId,
+        });
         if (data.paymentStatus === "paid") {
           updateOrderPayment(qrOrderId, {
             paymentStatus: "paid",

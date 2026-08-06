@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findOrderById, patchOrderPayment } from "@/lib/payment-db";
+import { payLog } from "@/lib/pay-log";
 import {
   createPaymentLink,
   createUpiQr,
@@ -14,7 +15,15 @@ import { isSupabaseConfigured } from "@/lib/supabase-server";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  payLog("create-qr", "Request received");
+
   if (!isRazorpayConfigured()) {
+    payLog(
+      "create-qr",
+      "Razorpay keys missing in env",
+      undefined,
+      "error"
+    );
     return NextResponse.json(
       {
         error:
@@ -34,6 +43,7 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
+    payLog("create-qr", "Invalid JSON body", undefined, "error");
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
@@ -47,10 +57,18 @@ export async function POST(req: NextRequest) {
   let description = body.description?.trim() || "Seafood order";
   let existingProviderId: string | undefined;
 
+  payLog("create-qr", "Parsed body", {
+    orderId,
+    trackingCode,
+    amountInr,
+    force: Boolean(body.force),
+  });
+
   if (isSupabaseConfigured()) {
     const order = await findOrderById(orderId);
     if (order) {
       if (order.paymentStatus === "paid") {
+        payLog("create-qr", "Order already paid", { orderId });
         return NextResponse.json({
           ok: true,
           alreadyPaid: true,
@@ -67,6 +85,10 @@ export async function POST(req: NextRequest) {
             const link = await fetchPaymentLink(existingProviderId);
             if (link.status === "created" || link.status === "partially_paid") {
               const imageUrl = await qrDataUrlFromText(link.short_url);
+              payLog("create-qr", "Reusing payment link", {
+                linkId: existingProviderId,
+                status: link.status,
+              });
               return NextResponse.json({
                 ok: true,
                 orderId: order.id,
@@ -81,6 +103,9 @@ export async function POST(req: NextRequest) {
           } else {
             const qr = await fetchUpiQr(existingProviderId);
             if (qr.status === "active") {
+              payLog("create-qr", "Reusing UPI QR", {
+                qrId: existingProviderId,
+              });
               return NextResponse.json({
                 ok: true,
                 orderId: order.id,
@@ -93,14 +118,25 @@ export async function POST(req: NextRequest) {
               });
             }
           }
-        } catch {
-          /* create a fresh QR / link below */
+        } catch (e) {
+          payLog(
+            "create-qr",
+            "Reuse failed, creating new",
+            e instanceof Error ? e.message : e,
+            "warn"
+          );
         }
       }
+    } else {
+      payLog("create-qr", "Order not in DB yet — using client amount", {
+        orderId,
+        amountInr,
+      });
     }
   }
 
   if (!trackingCode || amountInr < 1) {
+    payLog("create-qr", "Missing tracking/amount", { trackingCode, amountInr }, "error");
     return NextResponse.json(
       { error: "trackingCode and amountInr required when order is not in DB" },
       { status: 400 }
@@ -120,6 +156,7 @@ export async function POST(req: NextRequest) {
         await patchOrderPayment(orderId, { razorpayQrId: qr.id });
       }
 
+      payLog("create-qr", "UPI QR created", { qrId: qr.id, amountInr });
       return NextResponse.json({
         ok: true,
         orderId,
@@ -131,11 +168,11 @@ export async function POST(req: NextRequest) {
       });
     } catch (upiErr) {
       const msg = upiErr instanceof Error ? upiErr.message : "UPI QR failed";
+      payLog("create-qr", "UPI QR failed", msg, "warn");
       if (!isUpiQrFeatureMissing(msg)) {
         throw upiErr;
       }
 
-      // Account often lacks on-demand UPI QR API — Payment Link + QR works on standard accounts.
       const link = await createPaymentLink({
         orderId,
         trackingCode,
@@ -147,6 +184,12 @@ export async function POST(req: NextRequest) {
       if (isSupabaseConfigured()) {
         await patchOrderPayment(orderId, { razorpayQrId: link.id });
       }
+
+      payLog("create-qr", "Payment link QR created (fallback)", {
+        linkId: link.id,
+        shortUrl: link.short_url,
+        amountInr,
+      });
 
       return NextResponse.json({
         ok: true,
@@ -163,6 +206,7 @@ export async function POST(req: NextRequest) {
     }
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to create QR";
+    payLog("create-qr", "Fatal error", message, "error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
