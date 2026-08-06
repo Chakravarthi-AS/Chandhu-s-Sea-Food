@@ -319,6 +319,7 @@ function OrderForm() {
         amountInr: order.totalInr,
         description: `Order ${order.trackingCode}`,
         force,
+        order,
       }),
     });
     const data = (await res.json()) as {
@@ -421,6 +422,13 @@ function OrderForm() {
         return;
       }
 
+      console.log("[pay:client] order created", {
+        id: order.id,
+        tracking: order.trackingCode,
+        method,
+        phone: loggedPhone,
+      });
+
       window.setTimeout(() => {
         saveCustomerLocation(
           {
@@ -442,8 +450,13 @@ function OrderForm() {
       await startUpiQr(order);
     } catch (err) {
       console.error(err);
-      setError("Could not place order. Please try again.");
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Could not place order. Please try again.";
+      setError(msg);
       setShowOtp(false);
+      setPayStep(false);
     } finally {
       setPlacing(false);
     }
@@ -553,21 +566,30 @@ function OrderForm() {
   if (successCode) {
     const pay = placedOrder?.paymentStatus;
     const method = placedOrder?.paymentMethod;
+    const paidOnline = method === "razorpay_upi_qr" && pay === "paid";
+    const weightAuto =
+      successAuto &&
+      !paidOnline &&
+      (placedOrder?.agentNote?.includes("total") ||
+        (placedOrder?.quantityKg ?? 0) >= config.minKgForExtended);
+
     return (
       <div className="container section" style={{ maxWidth: 640 }}>
         <div className="panel">
           <span className="badge">
-            {successAuto ? "Order confirmed" : "Order received"}
+            {successAuto || paidOnline ? "Order confirmed" : "Order received"}
           </span>
           <h1 style={{ marginTop: "0.75rem" }}>
-            {successAuto
+            {paidOnline || successAuto
               ? "Auto-confirmed — we’re preparing your pack"
               : "Waiting for agent confirmation"}
           </h1>
           <p style={{ color: "var(--ink-muted)" }}>
-            {successAuto
-              ? `Total weight is ${formatQtyParts(successQty)} (≥ ${config.minKgForExtended} kg), so this order was accepted automatically.`
-              : `Orders under ${config.minKgForExtended} kg need agent confirmation before delivery.`}
+            {paidOnline
+              ? "Online payment received, so this order was confirmed automatically."
+              : weightAuto
+                ? `Total weight is ${formatQtyParts(successQty)} (≥ ${config.minKgForExtended} kg), so this order was accepted automatically.`
+                : `Orders under ${config.minKgForExtended} kg need agent confirmation before delivery (unless paid online).`}
           </p>
           {method === "cod" || pay === "cod_pending" || pay === "cod_collected" ? (
             <div className="alert alert-info" style={{ margin: "0.75rem 0" }}>

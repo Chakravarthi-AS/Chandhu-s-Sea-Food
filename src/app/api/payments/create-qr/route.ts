@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { normalizePhone } from "@/lib/defaults";
+import { orderToRow } from "@/lib/order-db";
 import { findOrderById, patchOrderPayment } from "@/lib/payment-db";
 import { payLog } from "@/lib/pay-log";
 import {
@@ -10,7 +12,8 @@ import {
   isUpiQrFeatureMissing,
   qrDataUrlFromText,
 } from "@/lib/razorpay";
-import { isSupabaseConfigured } from "@/lib/supabase-server";
+import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-server";
+import type { CustomerOrder } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -18,12 +21,7 @@ export async function POST(req: NextRequest) {
   payLog("create-qr", "Request received");
 
   if (!isRazorpayConfigured()) {
-    payLog(
-      "create-qr",
-      "Razorpay keys missing in env",
-      undefined,
-      "error"
-    );
+    payLog("create-qr", "Razorpay keys missing in env", undefined, "error");
     return NextResponse.json(
       {
         error:
@@ -39,6 +37,7 @@ export async function POST(req: NextRequest) {
     amountInr?: number;
     description?: string;
     force?: boolean;
+    order?: CustomerOrder;
   };
   try {
     body = await req.json();
@@ -47,7 +46,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const orderId = body.orderId?.trim();
+  const orderId = body.orderId?.trim() || body.order?.id?.trim();
   if (!orderId) {
     return NextResponse.json({ error: "orderId required" }, { status: 400 });
   }
@@ -62,10 +61,42 @@ export async function POST(req: NextRequest) {
     trackingCode,
     amountInr,
     force: Boolean(body.force),
+    hasOrderSnapshot: Boolean(body.order),
   });
 
   if (isSupabaseConfigured()) {
-    const order = await findOrderById(orderId);
+    let order = await findOrderById(orderId);
+
+    // If checkout raced ahead of cloud save, upsert the snapshot now.
+    if (!order && body.order && body.order.id === orderId) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const snapshot: CustomerOrder = {
+          ...body.order,
+          customerPhone: normalizePhone(body.order.customerPhone),
+        };
+        const { error } = await supabase
+          .from("orders")
+          .upsert(orderToRow(snapshot));
+        if (error) {
+          payLog(
+            "create-qr",
+            "Failed to upsert order snapshot",
+            error.message,
+            "error"
+          );
+          return NextResponse.json(
+            { error: `Could not save order: ${error.message}` },
+            { status: 500 }
+          );
+        }
+        payLog("create-qr", "Upserted missing order snapshot", {
+          trackingCode: snapshot.trackingCode,
+        });
+        order = snapshot;
+      }
+    }
+
     if (order) {
       if (order.paymentStatus === "paid") {
         payLog("create-qr", "Order already paid", { orderId });
@@ -128,15 +159,29 @@ export async function POST(req: NextRequest) {
         }
       }
     } else {
-      payLog("create-qr", "Order not in DB yet — using client amount", {
-        orderId,
-        amountInr,
-      });
+      payLog(
+        "create-qr",
+        "Order not in DB and no snapshot — cannot safely take payment",
+        { orderId },
+        "error"
+      );
+      return NextResponse.json(
+        {
+          error:
+            "Order was not saved to the database. Please go back and place the order again.",
+        },
+        { status: 409 }
+      );
     }
   }
 
   if (!trackingCode || amountInr < 1) {
-    payLog("create-qr", "Missing tracking/amount", { trackingCode, amountInr }, "error");
+    payLog(
+      "create-qr",
+      "Missing tracking/amount",
+      { trackingCode, amountInr },
+      "error"
+    );
     return NextResponse.json(
       { error: "trackingCode and amountInr required when order is not in DB" },
       { status: 400 }

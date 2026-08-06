@@ -476,25 +476,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         paidAt: order.paidAt,
       };
       setState((s) => ({ ...s, orders: [created, ...s.orders] }));
-      if (serverMenuConfigured) {
-        const cust: CustomerAccount =
-          existing ??
-          ({
-            id: created.customerId ?? crypto.randomUUID(),
-            phone: phoneNorm,
-            name: order.customerName,
-            savedLocations: [],
-            createdAt: created.createdAt,
-            lastLoginAt: created.createdAt,
-          } satisfies CustomerAccount);
-        await Promise.all([
-          createOrderOnServer(created),
-          upsertCustomerOnServer(cust),
-        ]);
+
+      // Always attempt cloud save when Supabase is available — don't rely on a
+      // racey serverMenuConfigured flag (orders were staying local-only).
+      const cust: CustomerAccount =
+        existing ??
+        ({
+          id: created.customerId ?? crypto.randomUUID(),
+          phone: phoneNorm,
+          name: order.customerName,
+          savedLocations: [],
+          createdAt: created.createdAt,
+          lastLoginAt: created.createdAt,
+        } satisfies CustomerAccount);
+
+      const [orderSave, customerSave] = await Promise.all([
+        createOrderOnServer(created),
+        upsertCustomerOnServer(cust),
+      ]);
+
+      if (orderSave.configured) {
+        setServerMenuConfigured(true);
+        if (!orderSave.ok) {
+          console.error("[pay] order cloud save failed", orderSave.error);
+          throw new Error(
+            orderSave.error ||
+              "Could not save order to cloud. Check connection and try again."
+          );
+        }
+        console.log("[pay] order saved to cloud", created.trackingCode);
+      } else {
+        console.warn(
+          "[pay] cloud DB not configured — order kept in this browser only"
+        );
       }
+      if (customerSave === false) {
+        console.warn("[pay] customer cloud save failed (order still saved)");
+      }
+
       return created;
     },
-    [state.customers, state.config.minKgForExtended, serverMenuConfigured]
+    [state.customers, state.config.minKgForExtended]
   );
 
   const setOrderStatus = useCallback(

@@ -28,13 +28,31 @@ export async function fetchOrdersFromServer(opts: {
   };
 }
 
-export async function createOrderOnServer(order: CustomerOrder): Promise<boolean> {
+export async function createOrderOnServer(
+  order: CustomerOrder
+): Promise<{ ok: boolean; configured: boolean; error?: string }> {
   const res = await fetch("/api/orders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(order),
   });
-  return res.ok;
+  let data: { error?: string } = {};
+  try {
+    data = (await res.json()) as { error?: string };
+  } catch {
+    /* ignore */
+  }
+  if (res.status === 503) {
+    return { ok: false, configured: false, error: data.error };
+  }
+  if (!res.ok) {
+    return {
+      ok: false,
+      configured: true,
+      error: data.error || `Save failed (${res.status})`,
+    };
+  }
+  return { ok: true, configured: true };
 }
 
 export async function patchOrderOnServer(
