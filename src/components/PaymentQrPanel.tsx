@@ -6,6 +6,7 @@ import { formatInr } from "@/lib/defaults";
 type Props = {
   amountInr: number;
   imageUrl: string | null;
+  payUrl?: string | null;
   waiting: boolean;
   error: string | null;
   onCancel: () => void;
@@ -15,6 +16,7 @@ type Props = {
 export function PaymentQrPanel({
   amountInr,
   imageUrl,
+  payUrl,
   waiting,
   error,
   onCancel,
@@ -37,7 +39,8 @@ export function PaymentQrPanel({
         Pay {formatInr(amountInr)}
       </h2>
       <p style={{ color: "var(--ink-muted)", marginTop: 0 }}>
-        Scan this QR with GPay, PhonePe, Paytm, or any UPI app. Amount is fixed.
+        Scan this QR with any UPI app
+        {payUrl ? ", or open the payment link below" : ""}. Amount is fixed.
       </p>
 
       <div className="pay-qr-frame">
@@ -51,6 +54,14 @@ export function PaymentQrPanel({
           </div>
         )}
       </div>
+
+      {payUrl && (
+        <p style={{ marginTop: "0.85rem" }}>
+          <a href={payUrl} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
+            Open payment page
+          </a>
+        </p>
+      )}
 
       {waiting && !error && (
         <div className="alert alert-info" style={{ marginTop: "1rem" }}>

@@ -5,7 +5,11 @@ import {
   markOrderPaid,
   patchOrderPayment,
 } from "@/lib/payment-db";
-import { fetchUpiQr, isRazorpayConfigured } from "@/lib/razorpay";
+import {
+  fetchPaymentLink,
+  fetchUpiQr,
+  isRazorpayConfigured,
+} from "@/lib/razorpay";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +22,13 @@ export async function GET(req: NextRequest) {
   }
 
   let paymentStatus: string | null = null;
-  let qrId = qrIdParam || "";
+  let providerId = qrIdParam || "";
 
   if (orderId) {
     const order = await findOrderById(orderId);
     if (order) {
       paymentStatus = order.paymentStatus;
-      qrId = order.razorpayQrId || qrId;
+      providerId = order.razorpayQrId || providerId;
       if (order.paymentStatus === "paid") {
         return NextResponse.json({
           ok: true,
@@ -36,7 +40,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (!qrId) {
+  if (!providerId) {
     return NextResponse.json({
       ok: true,
       paymentStatus: paymentStatus ?? "pending",
@@ -47,43 +51,86 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       paymentStatus: paymentStatus ?? "pending",
-      qrId,
+      qrId: providerId,
     });
   }
 
   try {
-    const qr = await fetchUpiQr(qrId);
+    if (providerId.startsWith("plink_")) {
+      const link = await fetchPaymentLink(providerId);
+      if (link.status === "paid" || link.amount_paid > 0) {
+        const paid = await markOrderPaid({
+          orderId: orderId || undefined,
+          qrId: providerId,
+        });
+        return NextResponse.json({
+          ok: true,
+          paymentStatus: "paid",
+          paidAt: paid?.paidAt ?? new Date().toISOString(),
+          qrId: providerId,
+          mode: "payment_link",
+        });
+      }
+      if (link.status === "expired" || link.status === "cancelled") {
+        if (orderId) {
+          const order =
+            (await findOrderById(orderId)) || (await findOrderByQrId(providerId));
+          if (order && order.paymentStatus === "pending") {
+            await patchOrderPayment(order.id, { paymentStatus: "expired" });
+          }
+        }
+        return NextResponse.json({
+          ok: true,
+          paymentStatus: "expired",
+          qrId: providerId,
+          mode: "payment_link",
+        });
+      }
+      return NextResponse.json({
+        ok: true,
+        paymentStatus: paymentStatus ?? "pending",
+        qrId: providerId,
+        mode: "payment_link",
+        payUrl: link.short_url,
+      });
+    }
+
+    const qr = await fetchUpiQr(providerId);
     if (qr.payments_count_received > 0) {
       const paid = await markOrderPaid({
         orderId: orderId || undefined,
-        qrId,
+        qrId: providerId,
       });
       return NextResponse.json({
         ok: true,
         paymentStatus: "paid",
         paidAt: paid?.paidAt ?? new Date().toISOString(),
-        qrId,
+        qrId: providerId,
+        mode: "upi_qr",
         amountReceivedPaise: qr.payments_amount_received,
       });
     }
 
     if (qr.status === "closed" && orderId) {
-      const order = (await findOrderById(orderId)) || (await findOrderByQrId(qrId));
+      const order =
+        (await findOrderById(orderId)) || (await findOrderByQrId(providerId));
       if (order && order.paymentStatus === "pending") {
         await patchOrderPayment(order.id, { paymentStatus: "expired" });
       }
       return NextResponse.json({
         ok: true,
         paymentStatus: "expired",
-        qrId,
+        qrId: providerId,
+        mode: "upi_qr",
       });
     }
 
     return NextResponse.json({
       ok: true,
       paymentStatus: paymentStatus ?? "pending",
-      qrId,
+      qrId: providerId,
       imageUrl: qr.image_url,
+      mode: "upi_qr",
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Status check failed";

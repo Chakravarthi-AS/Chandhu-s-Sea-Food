@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findOrderById, patchOrderPayment } from "@/lib/payment-db";
-import { createUpiQr, isRazorpayConfigured } from "@/lib/razorpay";
+import {
+  createPaymentLink,
+  createUpiQr,
+  fetchPaymentLink,
+  fetchUpiQr,
+  isRazorpayConfigured,
+  isUpiQrFeatureMissing,
+  qrDataUrlFromText,
+} from "@/lib/razorpay";
 import { isSupabaseConfigured } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +45,7 @@ export async function POST(req: NextRequest) {
   let trackingCode = body.trackingCode?.trim() || "";
   let amountInr = Number(body.amountInr) || 0;
   let description = body.description?.trim() || "Seafood order";
-  let existingQrId: string | undefined;
+  let existingProviderId: string | undefined;
 
   if (isSupabaseConfigured()) {
     const order = await findOrderById(orderId);
@@ -52,24 +60,41 @@ export async function POST(req: NextRequest) {
       trackingCode = order.trackingCode;
       amountInr = order.paymentAmountInr || order.totalInr;
       description = `Order ${order.trackingCode}`;
-      existingQrId = order.razorpayQrId;
-      if (existingQrId && !body.force) {
+      existingProviderId = order.razorpayQrId;
+      if (existingProviderId && !body.force) {
         try {
-          const { fetchUpiQr } = await import("@/lib/razorpay");
-          const qr = await fetchUpiQr(existingQrId);
-          if (qr.status === "active") {
-            return NextResponse.json({
-              ok: true,
-              orderId: order.id,
-              qrId: existingQrId,
-              imageUrl: qr.image_url,
-              amountInr,
-              reused: true,
-              closeBy: qr.close_by ?? null,
-            });
+          if (existingProviderId.startsWith("plink_")) {
+            const link = await fetchPaymentLink(existingProviderId);
+            if (link.status === "created" || link.status === "partially_paid") {
+              const imageUrl = await qrDataUrlFromText(link.short_url);
+              return NextResponse.json({
+                ok: true,
+                orderId: order.id,
+                qrId: existingProviderId,
+                imageUrl,
+                payUrl: link.short_url,
+                mode: "payment_link",
+                amountInr,
+                reused: true,
+              });
+            }
+          } else {
+            const qr = await fetchUpiQr(existingProviderId);
+            if (qr.status === "active") {
+              return NextResponse.json({
+                ok: true,
+                orderId: order.id,
+                qrId: existingProviderId,
+                imageUrl: qr.image_url,
+                mode: "upi_qr",
+                amountInr,
+                reused: true,
+                closeBy: qr.close_by ?? null,
+              });
+            }
           }
         } catch {
-          /* create a fresh QR below */
+          /* create a fresh QR / link below */
         }
       }
     }
@@ -83,25 +108,59 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const qr = await createUpiQr({
-      orderId,
-      trackingCode,
-      amountInr,
-      description,
-    });
+    try {
+      const qr = await createUpiQr({
+        orderId,
+        trackingCode,
+        amountInr,
+        description,
+      });
 
-    if (isSupabaseConfigured()) {
-      await patchOrderPayment(orderId, { razorpayQrId: qr.id });
+      if (isSupabaseConfigured()) {
+        await patchOrderPayment(orderId, { razorpayQrId: qr.id });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        orderId,
+        qrId: qr.id,
+        imageUrl: qr.image_url,
+        mode: "upi_qr",
+        amountInr,
+        closeBy: qr.close_by ?? null,
+      });
+    } catch (upiErr) {
+      const msg = upiErr instanceof Error ? upiErr.message : "UPI QR failed";
+      if (!isUpiQrFeatureMissing(msg)) {
+        throw upiErr;
+      }
+
+      // Account often lacks on-demand UPI QR API — Payment Link + QR works on standard accounts.
+      const link = await createPaymentLink({
+        orderId,
+        trackingCode,
+        amountInr,
+        description,
+      });
+      const imageUrl = await qrDataUrlFromText(link.short_url);
+
+      if (isSupabaseConfigured()) {
+        await patchOrderPayment(orderId, { razorpayQrId: link.id });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        orderId,
+        qrId: link.id,
+        imageUrl,
+        payUrl: link.short_url,
+        mode: "payment_link",
+        amountInr,
+        fallbackFrom: "upi_qr",
+        notice:
+          "UPI QR API is not enabled on this Razorpay account. Using Payment Link QR instead.",
+      });
     }
-
-    return NextResponse.json({
-      ok: true,
-      orderId,
-      qrId: qr.id,
-      imageUrl: qr.image_url,
-      amountInr,
-      closeBy: qr.close_by ?? null,
-    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to create QR";
     return NextResponse.json({ error: message }, { status: 500 });

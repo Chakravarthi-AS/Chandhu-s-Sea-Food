@@ -9,6 +9,9 @@ type WebhookBody = {
   payload?: {
     qr_code?: { entity?: { id?: string; notes?: Record<string, string> } };
     payment?: { entity?: { id?: string; notes?: Record<string, string> } };
+    payment_link?: {
+      entity?: { id?: string; notes?: Record<string, string>; status?: string };
+    };
   };
 };
 
@@ -30,27 +33,30 @@ export async function POST(req: NextRequest) {
 
   const event = body.event || "";
   const qrId = body.payload?.qr_code?.entity?.id;
+  const paymentLinkId = body.payload?.payment_link?.entity?.id;
   const paymentId = body.payload?.payment?.entity?.id;
   const orderId =
     body.payload?.qr_code?.entity?.notes?.order_id ||
+    body.payload?.payment_link?.entity?.notes?.order_id ||
     body.payload?.payment?.entity?.notes?.order_id;
 
-  if (
+  const shouldMarkPaid =
     event === "qr_code.credited" ||
     event === "payment.captured" ||
-    event.startsWith("qr_code.")
-  ) {
-    if (orderId || qrId) {
-      try {
-        await markOrderPaid({
-          orderId: orderId || undefined,
-          qrId: qrId || undefined,
-          paymentId: paymentId || undefined,
-        });
-      } catch (e) {
-        const message = e instanceof Error ? e.message : "Webhook update failed";
-        return NextResponse.json({ error: message }, { status: 500 });
-      }
+    event === "payment_link.paid" ||
+    event.startsWith("qr_code.") ||
+    (event === "order.paid" && Boolean(orderId || qrId || paymentLinkId));
+
+  if (shouldMarkPaid && (orderId || qrId || paymentLinkId)) {
+    try {
+      await markOrderPaid({
+        orderId: orderId || undefined,
+        qrId: qrId || paymentLinkId || undefined,
+        paymentId: paymentId || undefined,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Webhook update failed";
+      return NextResponse.json({ error: message }, { status: 500 });
     }
   }
 

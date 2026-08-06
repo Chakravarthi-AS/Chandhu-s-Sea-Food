@@ -98,6 +98,7 @@ function OrderForm() {
   } | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const [qrPayUrl, setQrPayUrl] = useState<string | null>(null);
   const [qrOrderId, setQrOrderId] = useState<string | null>(null);
   const [qrId, setQrId] = useState<string | null>(null);
   const [qrWaiting, setQrWaiting] = useState(false);
@@ -307,6 +308,7 @@ function OrderForm() {
     setQrOrderId(order.id);
     setQrId(null);
     setQrImageUrl(null);
+    setQrPayUrl(null);
 
     const res = await fetch("/api/payments/create-qr", {
       method: "POST",
@@ -323,6 +325,7 @@ function OrderForm() {
       error?: string;
       alreadyPaid?: boolean;
       imageUrl?: string;
+      payUrl?: string;
       qrId?: string;
     };
     if (!res.ok) {
@@ -346,6 +349,7 @@ function OrderForm() {
       setQrId(data.qrId);
       updateOrderPayment(order.id, { razorpayQrId: data.qrId });
     }
+    if (data.payUrl) setQrPayUrl(data.payUrl);
     if (data.imageUrl) setQrImageUrl(data.imageUrl);
     else {
       setQrError("QR created but image was missing. Tap Try again.");
@@ -626,6 +630,7 @@ function OrderForm() {
         <PaymentQrPanel
           amountInr={totalInr}
           imageUrl={qrImageUrl}
+          payUrl={qrPayUrl}
           waiting={qrWaiting}
           error={qrError}
           onCancel={() => {
