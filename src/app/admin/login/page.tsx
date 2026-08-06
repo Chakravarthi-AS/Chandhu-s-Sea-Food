@@ -10,19 +10,26 @@ export default function AdminLoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setError(null);
-    const ok = loginAdmin(username, password);
-    if (!ok) {
-      setError("Invalid username or password.");
-      return;
+    setSubmitting(true);
+    try {
+      const ok = await loginAdmin(username, password);
+      if (!ok) {
+        setError("Invalid username or password.");
+        return;
+      }
+      router.replace("/admin");
+    } finally {
+      setSubmitting(false);
     }
-    router.replace("/admin");
   }
 
-  if (!ready) return <p className="container section">Loading…</p>;
+  if (!ready) return null;
 
   return (
     <div className="container section" style={{ maxWidth: 440 }}>
@@ -41,6 +48,7 @@ export default function AdminLoginPage() {
               autoComplete="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              disabled={submitting}
               required
             />
           </div>
@@ -52,25 +60,26 @@ export default function AdminLoginPage() {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={submitting}
               required
             />
           </div>
           {error && <div className="alert alert-warn">{error}</div>}
-          <button type="submit" className="btn btn-primary">
-            Sign in
+          <button
+            type="submit"
+            className={`btn btn-primary${submitting ? " is-loading" : ""}`}
+            disabled={submitting}
+          >
+            {submitting ? (
+              <>
+                <span className="spinner spinner-sm spinner-light" aria-hidden />
+                Signing in…
+              </>
+            ) : (
+              "Sign in"
+            )}
           </button>
         </form>
-        <p
-          style={{
-            marginTop: "1.25rem",
-            fontSize: "0.85rem",
-            color: "var(--ink-muted)",
-          }}
-        >
-          Default demo login: <strong>admin</strong> / <strong>chandhu@123</strong>
-          <br />
-          Change these under Admin → Shop &amp; delivery after signing in.
-        </p>
       </div>
     </div>
   );

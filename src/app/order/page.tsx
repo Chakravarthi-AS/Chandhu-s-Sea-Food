@@ -18,6 +18,7 @@ import {
 import { useStore } from "@/lib/store";
 import type { OrderLineItem, OrderMode } from "@/lib/types";
 import { CustomerOtpModal } from "@/components/CustomerOtpModal";
+import { PageLoader } from "@/components/PageLoader";
 
 const DeliveryMap = dynamic(
   () => import("@/components/DeliveryMap").then((m) => m.DeliveryMap),
@@ -51,6 +52,7 @@ function OrderForm() {
     state,
     placeOrder,
     ready,
+    productsLoading,
     customer,
     saveCustomerLocation,
     updateCustomerName,
@@ -82,6 +84,7 @@ function OrderForm() {
   const [autoConfirmed, setAutoConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showOtp, setShowOtp] = useState(false);
+  const [placing, setPlacing] = useState(false);
 
   const placedFromUrl = search.get("placed");
   const placedOrder = useMemo(() => {
@@ -255,7 +258,9 @@ function OrderForm() {
     }));
   }
 
-  function commitOrder(loggedPhone: string, loggedName: string) {
+  async function commitOrder(loggedPhone: string, loggedName: string) {
+    if (placing) return;
+    setPlacing(true);
     try {
       updateCustomerName(loggedName, loggedPhone);
       const items = buildItems();
@@ -272,7 +277,7 @@ function OrderForm() {
       const avgRate =
         totalKg > 0 ? Math.round(totalInr / totalKg) : items[0]?.pricePerKg ?? 0;
 
-      const order = placeOrder({
+      const order = await placeOrder({
         customerId: customer?.id,
         customerName: loggedName.trim(),
         customerPhone: loggedPhone,
@@ -316,11 +321,14 @@ function OrderForm() {
       console.error(err);
       setError("Could not place order after login. Please try submit again.");
       setShowOtp(false);
+    } finally {
+      setPlacing(false);
     }
   }
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (placing) return;
     setError(null);
     const validationError = validateOrder();
     if (validationError) {
@@ -331,10 +339,12 @@ function OrderForm() {
       setShowOtp(true);
       return;
     }
-    commitOrder(customer.phone, name.trim() || customer.name);
+    void commitOrder(customer.phone, name.trim() || customer.name);
   }
 
-  if (!ready) return <p className="container section">Loading…</p>;
+  if (!ready) {
+    return null;
+  }
 
   const successCode = submittedCode || placedOrder?.trackingCode || null;
   const successAuto =
@@ -443,27 +453,34 @@ function OrderForm() {
 
           <div className="form-row">
             <label htmlFor="product">Seafood item</label>
-            <select
-              id="product"
-              value={draftProductId}
-              onChange={(e) => setDraftProductId(e.target.value)}
-            >
-              <option value="">Select seafood item…</option>
-              {products.map((p) => (
-                <option
-                  key={p.id}
-                  value={p.id}
-                  disabled={!isProductInStock(p)}
-                >
-                  {p.name} —{" "}
-                  {formatInr(
-                    draftMode === "bulk" ? p.bulkPricePerKg : p.pricePerKg
-                  )}
-                  /kg
-                  {!isProductInStock(p) ? " (out of stock)" : ""}
-                </option>
-              ))}
-            </select>
+            {productsLoading ? (
+              <div className="busy-banner" style={{ margin: 0 }}>
+                <span className="spinner spinner-sm" aria-hidden />
+                Loading menu from cloud…
+              </div>
+            ) : (
+              <select
+                id="product"
+                value={draftProductId}
+                onChange={(e) => setDraftProductId(e.target.value)}
+              >
+                <option value="">Select seafood item…</option>
+                {products.map((p) => (
+                  <option
+                    key={p.id}
+                    value={p.id}
+                    disabled={!isProductInStock(p)}
+                  >
+                    {p.name} —{" "}
+                    {formatInr(
+                      draftMode === "bulk" ? p.bulkPricePerKg : p.pricePerKg
+                    )}
+                    /kg
+                    {!isProductInStock(p) ? " (out of stock)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {draftMode === "retail" ? (
@@ -699,13 +716,32 @@ function OrderForm() {
           )}
 
           {error && <div className="alert alert-warn">{error}</div>}
+          {placing && (
+            <div className="busy-banner">
+              <span className="spinner spinner-sm" aria-hidden />
+              Saving your order — please wait…
+            </div>
+          )}
 
-          <button type="submit" className="btn btn-primary">
-            {customer
-              ? willAutoConfirm
-                ? "Place order (auto-confirm)"
-                : "Submit for agent confirmation"
-              : "Login with OTP & place order"}
+          <button
+            type="submit"
+            className={`btn btn-primary${placing ? " is-loading" : ""}`}
+            disabled={placing}
+          >
+            {placing ? (
+              <>
+                <span className="spinner spinner-sm spinner-light" aria-hidden />
+                Placing order…
+              </>
+            ) : customer ? (
+              willAutoConfirm ? (
+                "Place order (auto-confirm)"
+              ) : (
+                "Submit for agent confirmation"
+              )
+            ) : (
+              "Login with OTP & place order"
+            )}
           </button>
         </div>
 
@@ -750,7 +786,7 @@ function OrderForm() {
           setName(loggedName);
           // Defer so React finishes customer login state before placing order
           window.setTimeout(() => {
-            commitOrder(loggedPhone, loggedName);
+            void commitOrder(loggedPhone, loggedName);
           }, 0);
         }}
       />
@@ -760,7 +796,13 @@ function OrderForm() {
 
 export default function OrderPage() {
   return (
-    <Suspense fallback={<p className="container section">Loading order…</p>}>
+    <Suspense
+      fallback={
+        <div className="container section">
+          <PageLoader label="Loading order…" />
+        </div>
+      }
+    >
       <OrderForm />
     </Suspense>
   );

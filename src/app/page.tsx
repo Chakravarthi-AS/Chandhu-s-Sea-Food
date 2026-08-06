@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useStore } from "@/lib/store";
 import { formatInr, isProductInStock } from "@/lib/defaults";
 import Link from "next/link";
+import { PageLoader } from "@/components/PageLoader";
 
 const DeliveryMap = dynamic(
   () => import("@/components/DeliveryMap").then((m) => m.DeliveryMap),
@@ -18,18 +19,10 @@ const DeliveryMap = dynamic(
 );
 
 export default function HomePage() {
-  const { state, ready } = useStore();
+  const { state, productsLoading } = useStore();
   const { config, products } = state;
   const featured = products.filter((p) => p.featured);
   const rest = products.filter((p) => !p.featured);
-
-  if (!ready) {
-    return (
-      <div className="container section">
-        <p>Loading Chandhu Sea Food…</p>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -122,7 +115,9 @@ export default function HomePage() {
             <h2>Today&apos;s menu</h2>
             <p>Fresh catch priced per kg in INR — order what you need today.</p>
           </div>
-          {products.length === 0 ? (
+          {productsLoading ? (
+            <PageLoader label="Loading today's menu…" compact />
+          ) : products.length === 0 ? (
             <div className="panel empty-menu">
               <p style={{ margin: 0, color: "var(--ink-muted)" }}>
                 Menu is being updated. Check back soon, or ask us for today&apos;s

@@ -16,6 +16,21 @@ import {
   replaceProductsOnServer,
   upsertProductOnServer,
 } from "./products-api";
+import {
+  fetchAdminUserFromServer,
+  loginAdminOnServer,
+  saveAdminUserOnServer,
+} from "./admin-auth-api";
+import {
+  fetchCustomerFromServer,
+  updateCustomerOnServer,
+  upsertCustomerOnServer,
+} from "./customers-api";
+import {
+  createOrderOnServer,
+  fetchOrdersFromServer,
+  patchOrderOnServer,
+} from "./orders-api";
 import { clearAdminApiSecret, getAdminApiSecret, setAdminApiSecret } from "./admin-api";
 import type {
   AppState,
@@ -29,12 +44,14 @@ import type {
   ShopConfig,
 } from "./types";
 
-const STORAGE_KEY = "chandhu-sea-food-demo-v4";
+const STORAGE_KEY = "chandhu-sea-food-demo-v5";
 const ADMIN_SESSION_KEY = "csf-admin-session";
 const CUSTOMER_SESSION_KEY = "csf-customer-session";
 
 type StoreContextValue = {
   ready: boolean;
+  /** True while menu products are loading from Supabase */
+  productsLoading: boolean;
   /** True when Supabase env is set — menu is shared for all visitors */
   serverMenuConfigured: boolean;
   state: AppState;
@@ -48,6 +65,7 @@ type StoreContextValue = {
     pricePerKg: number,
     bulkPricePerKg: number
   ) => void;
+  replaceProductsPrices: (products: Product[]) => Promise<boolean>;
   upsertProduct: (product: Product) => void;
   removeProduct: (id: string) => void;
   upsertPartner: (partner: DeliveryPartner) => void;
@@ -57,7 +75,7 @@ type StoreContextValue = {
       CustomerOrder,
       "id" | "createdAt" | "trackingCode" | "status" | "agentNote"
     >
-  ) => CustomerOrder;
+  ) => Promise<CustomerOrder>;
   setOrderStatus: (
     orderId: string,
     status: CustomerOrder["status"],
@@ -65,7 +83,7 @@ type StoreContextValue = {
   ) => void;
   getOrderByTracking: (code: string) => CustomerOrder | undefined;
   getProduct: (id: string) => Product | undefined;
-  loginAdmin: (username: string, password: string) => boolean;
+  loginAdmin: (username: string, password: string) => Promise<boolean>;
   logoutAdmin: () => void;
   requestOtp: (phone: string) => { ok: boolean; message: string; demoCode?: string };
   verifyOtp: (
@@ -82,9 +100,38 @@ type StoreContextValue = {
   updateCustomerName: (name: string, phoneOverride?: string) => void;
   getCustomerOrders: () => CustomerOrder[];
   syncProductsToServer: (products: Product[]) => Promise<boolean>;
+  refreshOrdersFromServer: () => Promise<void>;
+  saveAdminCredentialsToServer: (
+    username: string,
+    password: string
+  ) => Promise<boolean>;
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);
+
+function mergeOrders(
+  local: CustomerOrder[],
+  remote: CustomerOrder[]
+): CustomerOrder[] {
+  const map = new Map<string, CustomerOrder>();
+  for (const o of local) map.set(o.id, o);
+  for (const o of remote) map.set(o.id, o);
+  return [...map.values()].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt)
+  );
+}
+
+function mergeCustomerIntoList(
+  customers: CustomerAccount[],
+  account: CustomerAccount
+): CustomerAccount[] {
+  const phone = normalizePhone(account.phone);
+  const exists = customers.some((c) => normalizePhone(c.phone) === phone);
+  if (!exists) return [...customers, account];
+  return customers.map((c) =>
+    normalizePhone(c.phone) === phone ? { ...c, ...account } : c
+  );
+}
 
 function loadState(): AppState {
   if (typeof window === "undefined") return DEFAULT_STATE;
@@ -173,6 +220,7 @@ function makeOtp(): string {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(DEFAULT_STATE);
   const [ready, setReady] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
   const [serverMenuConfigured, setServerMenuConfigured] = useState(false);
   const [adminLoggedIn, setAdminLoggedIn] = useState(false);
   const [customerPhone, setCustomerPhone] = useState<string | null>(null);
@@ -181,26 +229,85 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     async function init() {
       const local = loadState();
-      try {
-        const { configured, products } = await fetchProductsFromServer();
-        setServerMenuConfigured(configured);
-        if (configured && products.length > 0) {
-          local.products = products;
-        }
-      } catch {
-        setServerMenuConfigured(false);
-      }
       setState(local);
+
       const adminSession = sessionStorage.getItem(ADMIN_SESSION_KEY) === "1";
+      const sessPhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY);
       if (adminSession && !getAdminApiSecret()) {
         sessionStorage.removeItem(ADMIN_SESSION_KEY);
         setAdminLoggedIn(false);
       } else {
         setAdminLoggedIn(adminSession);
       }
-      const sessPhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY);
       if (sessPhone) setCustomerPhone(normalizePhone(sessPhone));
+      // Site UI is ready immediately — only products wait on the API
       setReady(true);
+
+      let configured = false;
+      setProductsLoading(true);
+      try {
+        const { configured: productsConfigured, products } =
+          await fetchProductsFromServer();
+        configured = productsConfigured;
+        setServerMenuConfigured(configured);
+        if (configured && products.length > 0) {
+          setState((s) => ({ ...s, products }));
+        }
+      } catch {
+        setServerMenuConfigured(false);
+      } finally {
+        setProductsLoading(false);
+      }
+
+      if (configured) {
+        try {
+          const adminUser = await fetchAdminUserFromServer();
+          if (adminUser.configured && adminUser.username) {
+            setState((s) => ({
+              ...s,
+              config: { ...s.config, adminUsername: adminUser.username! },
+            }));
+          }
+        } catch {
+          /* keep local admin username */
+        }
+      }
+
+      if (configured && sessPhone) {
+        const phone = normalizePhone(sessPhone);
+        try {
+          const { customer } = await fetchCustomerFromServer(phone);
+          if (customer) {
+            setState((s) => ({
+              ...s,
+              customers: mergeCustomerIntoList(s.customers, customer),
+            }));
+          }
+          const { orders } = await fetchOrdersFromServer({ phone });
+          if (orders.length > 0) {
+            setState((s) => ({
+              ...s,
+              orders: mergeOrders(s.orders, orders),
+            }));
+          }
+        } catch {
+          /* local fallback */
+        }
+      }
+
+      if (configured && adminSession && getAdminApiSecret()) {
+        try {
+          const { orders } = await fetchOrdersFromServer({ asAdmin: true });
+          if (orders.length > 0) {
+            setState((s) => ({
+              ...s,
+              orders: mergeOrders(s.orders, orders),
+            }));
+          }
+        } catch {
+          /* local fallback */
+        }
+      }
     }
     void init();
   }, []);
@@ -235,16 +342,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const updateProductPrice = useCallback(
     (productId: string, pricePerKg: number, bulkPricePerKg: number) => {
-      setState((s) => {
-        const products = s.products.map((p) =>
+      setState((s) => ({
+        ...s,
+        products: s.products.map((p) =>
           p.id === productId ? { ...p, pricePerKg, bulkPricePerKg } : p
-        );
-        const updated = products.find((p) => p.id === productId);
-        if (updated) void upsertProductOnServer(updated);
-        return { ...s, products };
-      });
+        ),
+      }));
     },
     []
+  );
+
+  const replaceProductsPrices = useCallback(
+    async (products: Product[]) => {
+      setState((s) => ({ ...s, products }));
+      if (!serverMenuConfigured) return true;
+      return replaceProductsOnServer(products);
+    },
+    [serverMenuConfigured]
   );
 
   const upsertProduct = useCallback((product: Product) => {
@@ -297,12 +411,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const placeOrder = useCallback(
-    (
+    async (
       order: Omit<
         CustomerOrder,
         "id" | "createdAt" | "trackingCode" | "status" | "agentNote"
       >
-    ): CustomerOrder => {
+    ): Promise<CustomerOrder> => {
       const phoneNorm = normalizePhone(order.customerPhone);
       const existing = state.customers.find(
         (c) => normalizePhone(c.phone) === phoneNorm
@@ -332,9 +446,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : undefined,
       };
       setState((s) => ({ ...s, orders: [created, ...s.orders] }));
+      if (serverMenuConfigured) {
+        const cust: CustomerAccount =
+          existing ??
+          ({
+            id: created.customerId ?? crypto.randomUUID(),
+            phone: phoneNorm,
+            name: order.customerName,
+            savedLocations: [],
+            createdAt: created.createdAt,
+            lastLoginAt: created.createdAt,
+          } satisfies CustomerAccount);
+        await Promise.all([
+          createOrderOnServer(created),
+          upsertCustomerOnServer(cust),
+        ]);
+      }
       return created;
     },
-    [state.customers, state.config.minKgForExtended]
+    [state.customers, state.config.minKgForExtended, serverMenuConfigured]
   );
 
   const setOrderStatus = useCallback(
@@ -360,8 +490,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             : o
         ),
       }));
+      if (serverMenuConfigured) {
+        void patchOrderOnServer(orderId, {
+          status,
+          agentNote: extras?.agentNote,
+          deliveryPartnerId: extras?.deliveryPartnerId,
+        });
+      }
     },
-    []
+    [serverMenuConfigured]
   );
 
   const getOrderByTracking = useCallback(
@@ -378,18 +515,65 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const loginAdmin = useCallback(
-    (username: string, password: string) => {
-      const ok =
-        username.trim() === state.config.adminUsername &&
-        password === state.config.adminPassword;
+    async (username: string, password: string) => {
+      let ok = false;
+      if (serverMenuConfigured) {
+        const result = await loginAdminOnServer(username, password);
+        ok = result.ok;
+        if (ok && result.username) {
+          setState((s) => ({
+            ...s,
+            config: { ...s.config, adminUsername: result.username! },
+          }));
+        }
+      }
+      if (!ok) {
+        ok =
+          username.trim() === state.config.adminUsername &&
+          password === state.config.adminPassword;
+      }
       if (ok) {
         sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
         setAdminApiSecret(password);
         setAdminLoggedIn(true);
+        if (serverMenuConfigured) {
+          const { orders } = await fetchOrdersFromServer({ asAdmin: true });
+          if (orders.length > 0) {
+            setState((s) => ({
+              ...s,
+              orders: mergeOrders(s.orders, orders),
+            }));
+          }
+        }
       }
       return ok;
     },
-    [state.config.adminUsername, state.config.adminPassword]
+    [
+      state.config.adminUsername,
+      state.config.adminPassword,
+      serverMenuConfigured,
+    ]
+  );
+
+  const refreshOrdersFromServer = useCallback(async () => {
+    if (!serverMenuConfigured) return;
+    if (adminLoggedIn && getAdminApiSecret()) {
+      const { orders } = await fetchOrdersFromServer({ asAdmin: true });
+      setState((s) => ({ ...s, orders: mergeOrders(s.orders, orders) }));
+      return;
+    }
+    if (customerPhone) {
+      const { orders } = await fetchOrdersFromServer({ phone: customerPhone });
+      setState((s) => ({ ...s, orders: mergeOrders(s.orders, orders) }));
+    }
+  }, [serverMenuConfigured, adminLoggedIn, customerPhone]);
+
+  const saveAdminCredentialsToServer = useCallback(
+    async (username: string, password: string) => {
+      if (!serverMenuConfigured) return true;
+      return saveAdminUserOnServer({ username, password });
+    },
+    [serverMenuConfigured]
   );
 
   const logoutAdmin = useCallback(() => {
@@ -452,20 +636,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setState((s) => {
         const found = s.customers.find((c) => normalizePhone(c.phone) === n);
         if (found) {
-          return {
-            ...s,
-            customers: s.customers.map((c) =>
-              c.id === found.id
-                ? {
-                    ...c,
-                    name: name?.trim() || c.name,
-                    lastLoginAt: now,
-                  }
-                : c
-            ),
-          };
+          const nextCustomers = s.customers.map((c) =>
+            c.id === found.id
+              ? {
+                  ...c,
+                  name: name?.trim() || c.name,
+                  lastLoginAt: now,
+                }
+              : c
+          );
+          const updated = nextCustomers.find((c) => c.id === found.id);
+          if (serverMenuConfigured && updated) {
+            void upsertCustomerOnServer(updated);
+          }
+          return { ...s, customers: nextCustomers };
         }
-        return { ...s, customers: [...s.customers, account] };
+        const nextCustomers = [...s.customers, account];
+        if (serverMenuConfigured) {
+          void upsertCustomerOnServer(account);
+        }
+        return { ...s, customers: nextCustomers };
       });
 
       sessionStorage.setItem(CUSTOMER_SESSION_KEY, n);
@@ -477,7 +667,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         customer: account,
       };
     },
-    [pendingOtp, state.customers]
+    [pendingOtp, state.customers, serverMenuConfigured]
   );
 
   const logoutCustomer = useCallback(() => {
@@ -489,9 +679,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (location: Omit<SavedLocation, "id" | "createdAt">, phoneOverride?: string) => {
       const target = normalizePhone(phoneOverride || customerPhone || "");
       if (!target) return;
-      setState((s) => ({
-        ...s,
-        customers: s.customers.map((c) => {
+      setState((s) => {
+        const nextCustomers = s.customers.map((c) => {
           if (normalizePhone(c.phone) !== target) return c;
           const duplicate = c.savedLocations.some(
             (l) =>
@@ -510,10 +699,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ...c,
             savedLocations: [entry, ...c.savedLocations].slice(0, 8),
           };
-        }),
-      }));
+        });
+        const updated = nextCustomers.find(
+          (c) => normalizePhone(c.phone) === target
+        );
+        if (serverMenuConfigured && updated) {
+          void updateCustomerOnServer(updated);
+        }
+        return { ...s, customers: nextCustomers };
+      });
     },
-    [customerPhone]
+    [customerPhone, serverMenuConfigured]
   );
 
   const removeCustomerLocation = useCallback(
@@ -540,16 +736,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (name: string, phoneOverride?: string) => {
       const target = normalizePhone(phoneOverride || customerPhone || "");
       if (!target) return;
-      setState((s) => ({
-        ...s,
-        customers: s.customers.map((c) =>
+      setState((s) => {
+        const nextCustomers = s.customers.map((c) =>
           normalizePhone(c.phone) === target
             ? { ...c, name: name.trim() || c.name }
             : c
-        ),
-      }));
+        );
+        const updated = nextCustomers.find(
+          (c) => normalizePhone(c.phone) === target
+        );
+        if (serverMenuConfigured && updated) {
+          void updateCustomerOnServer(updated);
+        }
+        return { ...s, customers: nextCustomers };
+      });
     },
-    [customerPhone]
+    [customerPhone, serverMenuConfigured]
   );
 
   const getCustomerOrders = useCallback(() => {
@@ -562,6 +764,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       ready,
+      productsLoading,
       serverMenuConfigured,
       state,
       adminLoggedIn,
@@ -570,6 +773,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       resetDemo,
       updateConfig,
       updateProductPrice,
+      replaceProductsPrices,
       upsertProduct,
       removeProduct,
       upsertPartner,
@@ -588,9 +792,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateCustomerName,
       getCustomerOrders,
       syncProductsToServer,
+      refreshOrdersFromServer,
+      saveAdminCredentialsToServer,
     }),
     [
       ready,
+      productsLoading,
       serverMenuConfigured,
       state,
       adminLoggedIn,
@@ -599,6 +806,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       resetDemo,
       updateConfig,
       updateProductPrice,
+      replaceProductsPrices,
       upsertProduct,
       removeProduct,
       upsertPartner,
@@ -617,6 +825,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateCustomerName,
       getCustomerOrders,
       syncProductsToServer,
+      refreshOrdersFromServer,
+      saveAdminCredentialsToServer,
     ]
   );
 

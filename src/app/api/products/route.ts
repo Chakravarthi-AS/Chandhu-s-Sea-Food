@@ -2,18 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { DEFAULT_STATE } from "@/lib/defaults";
 import { productToRow, rowToProduct } from "@/lib/product-db";
 import type { Product } from "@/lib/types";
+import { verifyAdminSecretAsync } from "@/lib/api-auth";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
-
-function verifyAdminSecret(secret: string | null): boolean {
-  if (!secret) return false;
-  const fromEnv =
-    process.env.ADMIN_API_SECRET ??
-    process.env.ADMIN_PASSWORD ??
-    DEFAULT_STATE.config.adminPassword;
-  return secret === fromEnv;
-}
 
 async function listProducts(): Promise<Product[]> {
   const supabase = getSupabaseAdmin();
@@ -62,7 +54,7 @@ export async function POST(req: NextRequest) {
   }
 
   const secret = req.headers.get("x-admin-secret");
-  if (!verifyAdminSecret(secret)) {
+  if (!(await verifyAdminSecretAsync(secret))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -96,7 +88,7 @@ export async function PUT(req: NextRequest) {
   }
 
   const secret = req.headers.get("x-admin-secret");
-  if (!verifyAdminSecret(secret)) {
+  if (!(await verifyAdminSecretAsync(secret))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -121,19 +113,9 @@ export async function PUT(req: NextRequest) {
     productToRow({ ...p, description: "", active: p.active !== false })
   );
 
-  const { error: delError } = await supabase
-    .from("products")
-    .delete()
-    .not("id", "is", null);
-  if (delError) {
-    return NextResponse.json({ error: delError.message }, { status: 500 });
-  }
-
-  if (rows.length > 0) {
-    const { error } = await supabase.from("products").insert(rows);
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+  const { error } = await supabase.from("products").upsert(rows);
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true, count: rows.length });
@@ -148,7 +130,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   const secret = req.headers.get("x-admin-secret");
-  if (!verifyAdminSecret(secret)) {
+  if (!(await verifyAdminSecretAsync(secret))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

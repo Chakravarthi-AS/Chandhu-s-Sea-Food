@@ -14,7 +14,7 @@ Website demo for **Chandhu Sea Food** — fresh prawns & seafood shop in Tirupat
 Admin menu items can sync for **everyone** on the live site (not only your browser).
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. **SQL Editor** → run `supabase/schema.sql` from this repo.
+2. **SQL Editor** → run `supabase/schema.sql` from this repo (new projects), or `supabase/migration-v2-orders-customers.sql` if `products` already exists.
 3. **Project Settings → API Keys** → copy URL, **anon / publishable** key, and **service role** key (LEGACY JWT `eyJ...` for `SUPABASE_SERVICE_ROLE_KEY` if `sb_secret_` fails).
 4. Copy `.env.example` to `.env.local` and fill values (never commit `.env.local`).
 5. On **Vercel** → **Settings → Environment Variables** → add at least:
@@ -28,6 +28,8 @@ Admin menu items can sync for **everyone** on the live site (not only your brows
 
    Then **Redeploy** production.
 6. Log in to **Admin** on the live site (so API auth works), then add/edit menu items.
+
+**Cloud tables:** `products` (menu), `admin_users` (portal login), `customers` (phone + saved addresses), `orders` (all orders; customers see theirs by phone after OTP login).
 
 `ADMIN_API_SECRET` should match your admin password (or set a dedicated secret).
 

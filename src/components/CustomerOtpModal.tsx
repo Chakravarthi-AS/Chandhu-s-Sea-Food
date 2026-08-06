@@ -82,7 +82,13 @@ export function CustomerOtpModal({
 
   function sendOtp(e: FormEvent) {
     e.preventDefault();
-    doSendOtp();
+    if (busy) return;
+    setBusy(true);
+    try {
+      doSendOtp();
+    } finally {
+      setBusy(false);
+    }
   }
 
   function resendOtp() {
@@ -166,8 +172,19 @@ export function CustomerOtpModal({
               />
             </div>
             {error && <div className="alert alert-warn">{error}</div>}
-            <button type="submit" className="btn btn-primary btn-block">
-              Send OTP
+            <button
+              type="submit"
+              className={`btn btn-primary btn-block${busy ? " is-loading" : ""}`}
+              disabled={busy}
+            >
+              {busy ? (
+                <>
+                  <span className="spinner spinner-sm spinner-light" aria-hidden />
+                  Sending…
+                </>
+              ) : (
+                "Send OTP"
+              )}
             </button>
           </form>
         ) : (
@@ -221,10 +238,17 @@ export function CustomerOtpModal({
 
             <button
               type="submit"
-              className="btn btn-primary btn-block"
+              className={`btn btn-primary btn-block${busy ? " is-loading" : ""}`}
               disabled={busy || otp.length < 6}
             >
-              {busy ? "Please wait…" : "Verify & continue"}
+              {busy ? (
+                <>
+                  <span className="spinner spinner-sm spinner-light" aria-hidden />
+                  Please wait…
+                </>
+              ) : (
+                "Verify & continue"
+              )}
             </button>
 
             <div className="otp-actions">

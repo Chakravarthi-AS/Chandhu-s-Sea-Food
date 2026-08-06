@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
+import { PageLoader } from "@/components/PageLoader";
 import { useStore } from "@/lib/store";
 
 export function AdminGuard({ children }: { children: ReactNode }) {
@@ -21,15 +22,23 @@ export function AdminGuard({ children }: { children: ReactNode }) {
   }, [ready, adminLoggedIn, isLogin, router]);
 
   if (!ready) {
-    return <p className="container section">Loading admin…</p>;
+    return null;
   }
 
   if (!adminLoggedIn && !isLogin) {
-    return <p className="container section">Redirecting to login…</p>;
+    return (
+      <div className="container section">
+        <PageLoader label="Redirecting to login…" compact />
+      </div>
+    );
   }
 
   if (adminLoggedIn && isLogin) {
-    return <p className="container section">Redirecting…</p>;
+    return (
+      <div className="container section">
+        <PageLoader label="Opening admin…" compact />
+      </div>
+    );
   }
 
   return <>{children}</>;

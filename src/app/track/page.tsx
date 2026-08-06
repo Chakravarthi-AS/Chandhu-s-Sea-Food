@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatInr, kgLabel } from "@/lib/defaults";
+import { fetchOrdersFromServer } from "@/lib/orders-api";
 import { useStore } from "@/lib/store";
+import type { CustomerOrder } from "@/lib/types";
+import { PageLoader } from "@/components/PageLoader";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_agent: "Pending agent confirmation",
@@ -19,17 +22,39 @@ function TrackInner() {
   const { state, getOrderByTracking, ready } = useStore();
   const [code, setCode] = useState(search.get("code") ?? "");
   const [query, setQuery] = useState(search.get("code") ?? "");
+  const [remoteOrder, setRemoteOrder] = useState<CustomerOrder | undefined>();
+  const [tracking, setTracking] = useState(false);
 
   const order = useMemo(
     () => (query ? getOrderByTracking(query) : undefined),
     [query, getOrderByTracking, state.orders]
   );
 
-  const partner = order?.deliveryPartnerId
-    ? state.partners.find((p) => p.id === order.deliveryPartnerId)
+  const displayed = order ?? remoteOrder;
+
+  useEffect(() => {
+    setRemoteOrder(undefined);
+    if (!query || order) {
+      setTracking(false);
+      return;
+    }
+    let cancelled = false;
+    setTracking(true);
+    void fetchOrdersFromServer({ tracking: query }).then(({ orders }) => {
+      if (cancelled) return;
+      if (orders[0]) setRemoteOrder(orders[0]);
+      setTracking(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [query, order]);
+
+  const partner = displayed?.deliveryPartnerId
+    ? state.partners.find((p) => p.id === displayed.deliveryPartnerId)
     : undefined;
 
-  if (!ready) return <p className="container section">Loading…</p>;
+  if (!ready) return null;
 
   return (
     <div className="container section" style={{ maxWidth: 680 }}>
@@ -51,6 +76,7 @@ function TrackInner() {
         }}
         onSubmit={(e) => {
           e.preventDefault();
+          if (tracking) return;
           setQuery(code.trim());
         }}
       >
@@ -60,20 +86,39 @@ function TrackInner() {
           onChange={(e) => setCode(e.target.value)}
           placeholder="e.g. CSF-…"
           aria-label="Tracking code"
+          disabled={tracking}
         />
-        <button type="submit" className="btn btn-primary">
-          Track
+        <button
+          type="submit"
+          className={`btn btn-primary${tracking ? " is-loading" : ""}`}
+          disabled={tracking}
+        >
+          {tracking ? (
+            <>
+              <span className="spinner spinner-sm spinner-light" aria-hidden />
+              Looking up…
+            </>
+          ) : (
+            "Track"
+          )}
         </button>
       </form>
 
-      {query && !order && (
+      {tracking && (
+        <div className="busy-banner">
+          <span className="spinner spinner-sm" aria-hidden />
+          Searching order…
+        </div>
+      )}
+
+      {query && !displayed && !tracking && (
         <div className="alert alert-warn">
           No order found for <strong>{query}</strong>. Check the code or place a
           new order.
         </div>
       )}
 
-      {order && (
+      {displayed && (
         <div className="panel" style={{ display: "grid", gap: "0.85rem" }}>
           <div
             style={{
@@ -84,17 +129,17 @@ function TrackInner() {
             }}
           >
             <div>
-              <span className="badge">{order.trackingCode}</span>
-              <h2 style={{ margin: "0.5rem 0 0" }}>{order.productName}</h2>
+              <span className="badge">{displayed.trackingCode}</span>
+              <h2 style={{ margin: "0.5rem 0 0" }}>{displayed.productName}</h2>
             </div>
-            <span className={`status-pill status-${order.status}`}>
-              {STATUS_LABEL[order.status]}
+            <span className={`status-pill status-${displayed.status}`}>
+              {STATUS_LABEL[displayed.status]}
             </span>
           </div>
 
-          {order.items?.length > 0 && (
+          {displayed.items?.length > 0 && (
             <ul style={{ margin: 0, paddingLeft: "1.1rem", color: "var(--ink-muted)" }}>
-              {order.items.map((item, idx) => (
+              {displayed.items.map((item, idx) => (
                 <li key={`${item.productId}-${idx}`}>
                   {item.productName} · {kgLabel(item.quantityKg)} ·{" "}
                   {formatInr(item.lineTotalInr)}
@@ -104,37 +149,37 @@ function TrackInner() {
           )}
 
           <p style={{ margin: 0, color: "var(--ink-muted)" }}>
-            Total {kgLabel(order.quantityKg)} · {formatInr(order.totalInr)} · ~
-            {order.distanceKm} km from hub
+            Total {kgLabel(displayed.quantityKg)} · {formatInr(displayed.totalInr)} · ~
+            {displayed.distanceKm} km from hub
           </p>
           <p style={{ margin: 0 }}>
-            <strong>{order.customerName}</strong> · {order.customerPhone}
+            <strong>{displayed.customerName}</strong> · {displayed.customerPhone}
             <br />
-            {order.address}
+            {displayed.address}
           </p>
 
-          {order.agentNote && (
-            <div className="alert alert-info">{order.agentNote}</div>
+          {displayed.agentNote && (
+            <div className="alert alert-info">{displayed.agentNote}</div>
           )}
 
-          {order.status === "pending_agent" && (
+          {displayed.status === "pending_agent" && (
             <div className="alert alert-warn">
               Waiting for agent confirmation (orders under 2 kg).
             </div>
           )}
 
-          {order.status === "confirmed" && (
+          {displayed.status === "confirmed" && (
             <div className="alert alert-ok">
               Order confirmed
-              {order.agentNote?.includes("Auto-confirmed")
+              {displayed.agentNote?.includes("Auto-confirmed")
                 ? " automatically"
                 : ""}
               . Delivery partner details will show once dispatch starts.
             </div>
           )}
 
-          {(order.status === "out_for_delivery" ||
-            order.status === "delivered") &&
+          {(displayed.status === "out_for_delivery" ||
+            displayed.status === "delivered") &&
             partner && (
               <div
                 className="alert alert-ok"
@@ -149,8 +194,8 @@ function TrackInner() {
               </div>
             )}
 
-          {(order.status === "out_for_delivery" ||
-            order.status === "delivered") &&
+          {(displayed.status === "out_for_delivery" ||
+            displayed.status === "delivered") &&
             !partner && (
               <div className="alert alert-warn">
                 Dispatch started, but partner details are not assigned yet.
@@ -158,10 +203,10 @@ function TrackInner() {
               </div>
             )}
 
-          {order.status === "rejected" && (
+          {displayed.status === "rejected" && (
             <div className="alert alert-warn">
               This order was not confirmed
-              {order.agentNote ? `: ${order.agentNote}` : "."} Please contact
+              {displayed.agentNote ? `: ${displayed.agentNote}` : "."} Please contact
               support or place a new order.
             </div>
           )}
@@ -181,7 +226,13 @@ function TrackInner() {
 
 export default function TrackPage() {
   return (
-    <Suspense fallback={<p className="container section">Loading…</p>}>
+    <Suspense
+      fallback={
+        <div className="container section">
+          <PageLoader label="Loading tracker…" />
+        </div>
+      }
+    >
       <TrackInner />
     </Suspense>
   );

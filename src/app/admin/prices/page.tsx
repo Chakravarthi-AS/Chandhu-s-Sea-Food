@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { AdminShell } from "@/components/AdminShell";
+import { PageLoader } from "@/components/PageLoader";
 import { formatInr } from "@/lib/defaults";
 import { useStore } from "@/lib/store";
 import type { Product } from "@/lib/types";
@@ -30,12 +31,12 @@ const emptyForm = {
 export default function AdminPricesPage() {
   const {
     state,
-    updateProductPrice,
+    replaceProductsPrices,
     upsertProduct,
     removeProduct,
-    syncProductsToServer,
     serverMenuConfigured,
     ready,
+    productsLoading,
   } = useStore();
   const [draft, setDraft] = useState<
     Record<string, { pricePerKg: number; bulkPricePerKg: number }>
@@ -44,6 +45,8 @@ export default function AdminPricesPage() {
   const [form, setForm] = useState(emptyForm);
   const [formMsg, setFormMsg] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [itemBusy, setItemBusy] = useState(false);
 
   useEffect(() => {
     if (!ready) return;
@@ -57,29 +60,31 @@ export default function AdminPricesPage() {
     setDraft(next);
   }, [ready, state.products]);
 
-  if (!ready) return <p className="container section">Loading…</p>;
+  if (!ready) return null;
 
   function saveAll() {
+    if (saving) return;
     const merged = state.products.map((p) => ({
       ...p,
       pricePerKg: draft[p.id]?.pricePerKg ?? p.pricePerKg,
       bulkPricePerKg: draft[p.id]?.bulkPricePerKg ?? p.bulkPricePerKg,
     }));
-    Object.entries(draft).forEach(([id, prices]) => {
-      updateProductPrice(id, prices.pricePerKg, prices.bulkPricePerKg);
-    });
+    setSaving(true);
     void (async () => {
-      if (serverMenuConfigured) {
-        const ok = await syncProductsToServer(merged);
-        if (!ok) {
+      try {
+        const ok = await replaceProductsPrices(merged);
+        if (serverMenuConfigured && !ok) {
           setFormMsg(
             "Prices saved here, but cloud sync failed. Log in to admin again and retry."
           );
           return;
         }
+        setFormMsg(null);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      } finally {
+        setSaving(false);
       }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
     })();
   }
 
@@ -106,11 +111,17 @@ export default function AdminPricesPage() {
   function setActive(id: string, active: boolean) {
     const p = state.products.find((x) => x.id === id);
     if (!p) return;
-    upsertProduct({ ...p, active });
+    upsertProduct({
+      ...p,
+      active,
+      pricePerKg: draft[p.id]?.pricePerKg ?? p.pricePerKg,
+      bulkPricePerKg: draft[p.id]?.bulkPricePerKg ?? p.bulkPricePerKg,
+    });
   }
 
   function onSubmitItem(e: FormEvent) {
     e.preventDefault();
+    if (itemBusy) return;
     const name = form.name.trim();
     if (!name) {
       setFormMsg("Enter an item name.");
@@ -125,6 +136,7 @@ export default function AdminPricesPage() {
     const id = editingId ?? `item-${slug}-${Date.now().toString(36)}`;
     const existing = state.products.find((p) => p.id === id);
 
+    setItemBusy(true);
     upsertProduct({
       id,
       name,
@@ -141,7 +153,10 @@ export default function AdminPricesPage() {
     setFormMsg(editingId ? "Item updated." : "New item added to the menu.");
     setEditingId(null);
     setForm(emptyForm);
-    setTimeout(() => setFormMsg(null), 2500);
+    window.setTimeout(() => {
+      setItemBusy(false);
+      setFormMsg(null);
+    }, 900);
   }
 
   function onDelete(id: string, name: string) {
@@ -275,11 +290,29 @@ export default function AdminPricesPage() {
           </div>
         </div>
         <div className="admin-item-form-actions">
-          <button type="submit" className="btn btn-primary">
-            {editingId ? "Update item" : "Add item"}
+          <button
+            type="submit"
+            className={`btn btn-primary${itemBusy ? " is-loading" : ""}`}
+            disabled={itemBusy || saving}
+          >
+            {itemBusy ? (
+              <>
+                <span className="spinner spinner-sm spinner-light" aria-hidden />
+                Saving…
+              </>
+            ) : editingId ? (
+              "Update item"
+            ) : (
+              "Add item"
+            )}
           </button>
           {editingId && (
-            <button type="button" className="btn btn-ghost" onClick={cancelEdit}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={cancelEdit}
+              disabled={itemBusy}
+            >
               Cancel
             </button>
           )}
@@ -288,6 +321,10 @@ export default function AdminPricesPage() {
       </form>
 
       <div className="panel admin-price-table-wrap">
+        {productsLoading ? (
+          <PageLoader label="Loading menu from cloud…" compact />
+        ) : (
+          <>
         <table className="table admin-price-table">
           <thead>
             <tr>
@@ -388,11 +425,25 @@ export default function AdminPricesPage() {
           </tbody>
         </table>
         <div className="admin-save-row">
-          <button type="button" className="btn btn-primary" onClick={saveAll}>
-            Save prices
+          <button
+            type="button"
+            className={`btn btn-primary${saving ? " is-loading" : ""}`}
+            onClick={saveAll}
+            disabled={saving || itemBusy}
+          >
+            {saving ? (
+              <>
+                <span className="spinner spinner-sm spinner-light" aria-hidden />
+                Saving prices…
+              </>
+            ) : (
+              "Save prices"
+            )}
           </button>
           {saved && <span className="alert alert-ok">Saved</span>}
         </div>
+          </>
+        )}
       </div>
     </AdminShell>
   );

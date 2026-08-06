@@ -6,21 +6,43 @@ import { useStore } from "@/lib/store";
 import type { ShopConfig } from "@/lib/types";
 
 export default function AdminSettingsPage() {
-  const { state, updateConfig, ready } = useStore();
+  const { state, updateConfig, saveAdminCredentialsToServer, serverMenuConfigured, ready } =
+    useStore();
   const [form, setForm] = useState<ShopConfig>(state.config);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (ready) setForm(state.config);
   }, [ready, state.config]);
 
-  if (!ready) return <p className="container section">Loading…</p>;
+  if (!ready) return null;
 
   function onSave(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return;
+    setSaving(true);
     updateConfig(form);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    void (async () => {
+      try {
+        if (serverMenuConfigured) {
+          const ok = await saveAdminCredentialsToServer(
+            form.adminUsername,
+            form.adminPassword
+          );
+          if (!ok) {
+            alert(
+              "Settings saved in this browser, but cloud admin login was not updated. Sign in to admin and try again."
+            );
+            return;
+          }
+        }
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      } finally {
+        setSaving(false);
+      }
+    })();
   }
 
   function set<K extends keyof ShopConfig>(key: K, value: ShopConfig[K]) {
@@ -162,8 +184,19 @@ export default function AdminSettingsPage() {
         </div>
 
         <div>
-          <button type="submit" className="btn btn-primary">
-            Save settings
+          <button
+            type="submit"
+            className={`btn btn-primary${saving ? " is-loading" : ""}`}
+            disabled={saving}
+          >
+            {saving ? (
+              <>
+                <span className="spinner spinner-sm spinner-light" aria-hidden />
+                Saving…
+              </>
+            ) : (
+              "Save settings"
+            )}
           </button>
           {saved && (
             <span className="alert alert-ok" style={{ marginLeft: "0.75rem" }}>

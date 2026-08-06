@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { CustomerOtpModal } from "@/components/CustomerOtpModal";
+import { PageLoader } from "@/components/PageLoader";
 import { formatInr, formatPhoneDisplay, kgLabel } from "@/lib/defaults";
 import { useStore } from "@/lib/store";
-import { CustomerOtpModal } from "@/components/CustomerOtpModal";
 
 const STATUS_LABEL: Record<string, string> = {
   pending_agent: "Pending agent",
@@ -21,14 +22,29 @@ export default function AccountPage() {
     getCustomerOrders,
     removeCustomerLocation,
     logoutCustomer,
+    refreshOrdersFromServer,
+    serverMenuConfigured,
   } = useStore();
   const [showLogin, setShowLogin] = useState(false);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+
+  useEffect(() => {
+    if (!ready || !customer || !serverMenuConfigured) return;
+    let cancelled = false;
+    setOrdersLoading(true);
+    void refreshOrdersFromServer().finally(() => {
+      if (!cancelled) setOrdersLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, customer, serverMenuConfigured, refreshOrdersFromServer]);
   const orders = useMemo(
     () => (customer ? getCustomerOrders() : []),
     [customer, getCustomerOrders]
   );
 
-  if (!ready) return <p className="container section">Loading…</p>;
+  if (!ready) return null;
 
   if (!customer) {
     return (
@@ -86,7 +102,9 @@ export default function AccountPage() {
       <div className="two-col" style={{ marginTop: "1.5rem" }}>
         <div className="panel">
           <h2 style={{ marginTop: 0 }}>Past orders</h2>
-          {orders.length === 0 ? (
+          {ordersLoading ? (
+            <PageLoader label="Fetching your orders…" compact />
+          ) : orders.length === 0 ? (
             <p style={{ color: "var(--ink-muted)" }}>
               No orders yet.{" "}
               <Link href="/order" style={{ color: "var(--sea)" }}>

@@ -11,13 +11,13 @@ export default function AdminHomePage() {
     ["confirmed", "out_for_delivery"].includes(o.status)
   ).length;
 
-  if (!ready) return <p className="container section">Loading…</p>;
+  if (!ready) return null;
 
   return (
     <AdminShell title="Dashboard">
       <p style={{ color: "var(--ink-muted)", marginTop: "-0.5rem" }}>
-        Demo admin — data is saved in this browser (localStorage). Confirm orders,
-        set prices, and assign delivery partners here.
+        Manage orders, menu prices, partners, and shop settings. Cloud sync is on
+        when Supabase is configured.
       </p>
 
       <div

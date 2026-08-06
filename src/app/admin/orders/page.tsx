@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AdminShell } from "@/components/AdminShell";
+import { PageLoader } from "@/components/PageLoader";
 import { formatInr, kgLabel } from "@/lib/defaults";
 import { useStore } from "@/lib/store";
 import type { CustomerOrder } from "@/lib/types";
@@ -15,36 +16,60 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function AdminOrdersPage() {
-  const { state, setOrderStatus, ready } = useStore();
+  const { state, setOrderStatus, refreshOrdersFromServer, serverMenuConfigured, ready } =
+    useStore();
   const [note, setNote] = useState<Record<string, string>>({});
   const [partnerPick, setPartnerPick] = useState<Record<string, string>>({});
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
 
-  if (!ready) return <p className="container section">Loading…</p>;
+  useEffect(() => {
+    if (!ready || !serverMenuConfigured) return;
+    let cancelled = false;
+    setLoadingOrders(true);
+    void refreshOrdersFromServer().finally(() => {
+      if (!cancelled) setLoadingOrders(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, serverMenuConfigured, refreshOrdersFromServer]);
+
+  if (!ready) return null;
 
   const activePartners = state.partners.filter((p) => p.active);
 
   function confirm(order: CustomerOrder) {
+    if (actionBusyId) return;
+    setActionBusyId(order.id);
     setOrderStatus(order.id, "confirmed", {
       agentNote: note[order.id] || "Confirmed — preparing pack.",
     });
+    window.setTimeout(() => setActionBusyId(null), 600);
   }
 
   function reject(order: CustomerOrder) {
+    if (actionBusyId) return;
+    setActionBusyId(order.id);
     setOrderStatus(order.id, "rejected", {
       agentNote: note[order.id] || "Not feasible for delivery at this time.",
     });
+    window.setTimeout(() => setActionBusyId(null), 600);
   }
 
   function dispatch(order: CustomerOrder) {
+    if (actionBusyId) return;
     const partnerId = partnerPick[order.id] || activePartners[0]?.id;
     if (!partnerId) {
       alert("Add an active delivery partner first.");
       return;
     }
+    setActionBusyId(order.id);
     setOrderStatus(order.id, "out_for_delivery", {
       deliveryPartnerId: partnerId,
       agentNote: note[order.id] || order.agentNote,
     });
+    window.setTimeout(() => setActionBusyId(null), 600);
   }
 
   return (
@@ -55,7 +80,16 @@ export default function AdminOrdersPage() {
         customer see partner name &amp; phone.
       </p>
 
-      {state.orders.length === 0 ? (
+      {loadingOrders && (
+        <div className="busy-banner">
+          <span className="spinner spinner-sm" aria-hidden />
+          Syncing orders from cloud…
+        </div>
+      )}
+
+      {loadingOrders && state.orders.length === 0 ? (
+        <PageLoader label="Loading orders…" compact />
+      ) : state.orders.length === 0 ? (
         <div className="panel" style={{ marginTop: "1rem" }}>
           No orders yet. Place one from the{" "}
           <a href="/order" style={{ color: "var(--sea)" }}>
@@ -131,6 +165,7 @@ export default function AdminOrdersPage() {
                           <button
                             type="button"
                             className="btn btn-primary btn-sm"
+                            disabled={actionBusyId === o.id}
                             onClick={() => confirm(o)}
                           >
                             Confirm
@@ -138,6 +173,7 @@ export default function AdminOrdersPage() {
                           <button
                             type="button"
                             className="btn btn-danger btn-sm"
+                            disabled={actionBusyId === o.id}
                             onClick={() => reject(o)}
                           >
                             Reject
@@ -165,6 +201,7 @@ export default function AdminOrdersPage() {
                           <button
                             type="button"
                             className="btn btn-primary btn-sm"
+                            disabled={actionBusyId === o.id}
                             onClick={() => dispatch(o)}
                           >
                             Start delivery
@@ -175,7 +212,13 @@ export default function AdminOrdersPage() {
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
-                          onClick={() => setOrderStatus(o.id, "delivered")}
+                          disabled={actionBusyId === o.id}
+                          onClick={() => {
+                            if (actionBusyId) return;
+                            setActionBusyId(o.id);
+                            setOrderStatus(o.id, "delivered");
+                            window.setTimeout(() => setActionBusyId(null), 600);
+                          }}
                         >
                           Mark delivered
                         </button>
