@@ -35,6 +35,8 @@ export async function patchOrderPayment(
     razorpayQrId: string;
     razorpayPaymentId: string;
     paidAt: string;
+    status: CustomerOrder["status"];
+    agentNote: string;
   }>
 ): Promise<CustomerOrder | null> {
   const existing = await findOrderById(orderId);
@@ -52,6 +54,8 @@ export async function patchOrderPayment(
       ? { razorpayPaymentId: patch.razorpayPaymentId }
       : {}),
     ...(patch.paidAt !== undefined ? { paidAt: patch.paidAt } : {}),
+    ...(patch.status !== undefined ? { status: patch.status } : {}),
+    ...(patch.agentNote !== undefined ? { agentNote: patch.agentNote } : {}),
   };
 
   const supabase = getSupabaseAdmin();
@@ -72,11 +76,19 @@ export async function markOrderPaid(opts: {
   if (!order && opts.qrId) order = await findOrderByQrId(opts.qrId);
   if (!order) return null;
 
-  if (order.paymentStatus === "paid") return order;
+  if (order.paymentStatus === "paid" && order.status === "confirmed") {
+    return order;
+  }
 
+  // Paid online → always auto-confirm (agent confirm only needed when unpaid / COD rules).
   return patchOrderPayment(order.id, {
     paymentStatus: "paid",
     razorpayPaymentId: opts.paymentId,
     paidAt: new Date().toISOString(),
+    status: order.status === "rejected" ? order.status : "confirmed",
+    agentNote:
+      order.status === "rejected"
+        ? order.agentNote
+        : "Auto-confirmed — online payment received.",
   });
 }

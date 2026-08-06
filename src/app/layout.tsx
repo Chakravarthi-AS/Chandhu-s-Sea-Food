@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, Outfit } from "next/font/google";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
+import { ThemeProvider } from "@/lib/theme";
 import { SiteHeader } from "@/components/SiteHeader";
 import { CustomerGreeting } from "@/components/CustomerGreeting";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -24,13 +25,32 @@ export const metadata: Metadata = {
     "Order fresh prawns and seafood in Tirupati. Daily imports from Nellore, never frozen, hygienically cleaned. Retail & bulk delivery.",
 };
 
+const themeInitScript = `
+(function(){
+  try {
+    var t = localStorage.getItem('csf-theme');
+    if (t !== 'light' && t !== 'dark') {
+      t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${outfit.variable}`}>
+    <html
+      lang="en"
+      className={`${fraunces.variable} ${outfit.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body
         style={
           {
@@ -39,12 +59,14 @@ export default function RootLayout({
           } as React.CSSProperties
         }
       >
-        <StoreProvider>
-          <SiteHeader />
-          <CustomerGreeting />
-          <main>{children}</main>
-          <SiteFooter />
-        </StoreProvider>
+        <ThemeProvider>
+          <StoreProvider>
+            <SiteHeader />
+            <CustomerGreeting />
+            <main>{children}</main>
+            <SiteFooter />
+          </StoreProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

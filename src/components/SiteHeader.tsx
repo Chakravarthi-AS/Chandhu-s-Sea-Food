@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
+import { useTheme } from "@/lib/theme";
 
 export function SiteHeader() {
   const { state, customer, logoutCustomer, adminLoggedIn, logoutAdmin } =
     useStore();
+  const { theme, toggleTheme } = useTheme();
   const pathname = usePathname();
   const isAdmin = pathname.startsWith("/admin");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -20,6 +22,18 @@ export function SiteHeader() {
     document.body.classList.toggle("nav-open", menuOpen);
     return () => document.body.classList.remove("nav-open");
   }, [menuOpen]);
+
+  const themeToggle = (
+    <button
+      type="button"
+      className="theme-toggle"
+      onClick={toggleTheme}
+      aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      title={theme === "dark" ? "Light mode" : "Dark mode"}
+    >
+      <span aria-hidden>{theme === "dark" ? "☀️" : "🌙"}</span>
+    </button>
+  );
 
   return (
     <>
@@ -92,6 +106,7 @@ export function SiteHeader() {
                     Login
                   </Link>
                 )}
+                {themeToggle}
                 <Link
                   href="/admin"
                   className="btn btn-ghost btn-sm"
@@ -103,6 +118,7 @@ export function SiteHeader() {
             ) : (
               <>
                 <Link href="/">← Storefront</Link>
+                {themeToggle}
                 {adminLoggedIn && (
                   <>
                     <Link href="/admin">Dashboard</Link>

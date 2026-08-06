@@ -491,9 +491,7 @@ function OrderForm() {
           if (tracking) {
             finishSuccess({
               trackingCode: tracking,
-              status:
-                state.orders.find((o) => o.id === qrOrderId)?.status ||
-                "confirmed",
+              status: "confirmed",
               customerName: pendingAuth?.name || customer?.name || name,
             });
           }

@@ -440,7 +440,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const existing = state.customers.find(
         (c) => normalizePhone(c.phone) === phoneNorm
       );
-      const autoConfirm = order.quantityKg >= state.config.minKgForExtended;
+      const isOnlinePay = order.paymentMethod === "razorpay_upi_qr";
+      // Online: wait for payment before confirm. COD/unpaid: weight-based agent rules.
+      const autoConfirm =
+        !isOnlinePay && order.quantityKg >= state.config.minKgForExtended;
       const created: CustomerOrder = {
         ...order,
         items: order.items?.length
@@ -462,7 +465,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         status: autoConfirm ? "confirmed" : "pending_agent",
         agentNote: autoConfirm
           ? `Auto-confirmed — total ${order.quantityKg} kg (≥ ${state.config.minKgForExtended} kg).`
-          : undefined,
+          : isOnlinePay
+            ? "Awaiting online payment before confirmation."
+            : undefined,
         paymentMethod: order.paymentMethod,
         paymentStatus: order.paymentStatus,
         paymentAmountInr: order.paymentAmountInr ?? order.totalInr,
@@ -541,14 +546,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         >
       >
     ) => {
+      const paidNow = patch.paymentStatus === "paid";
       setState((s) => ({
         ...s,
-        orders: s.orders.map((o) =>
-          o.id === orderId ? { ...o, ...patch } : o
-        ),
+        orders: s.orders.map((o) => {
+          if (o.id !== orderId) return o;
+          const next = { ...o, ...patch };
+          if (paidNow && o.status !== "rejected") {
+            next.status = "confirmed";
+            next.agentNote = "Auto-confirmed — online payment received.";
+          }
+          return next;
+        }),
       }));
       // Cloud payment writes for admin actions (COD collected). UPI paid is
-      // written by /api/payments/status and webhook.
+      // written by /api/payments/status and webhook (includes auto-confirm).
       if (serverMenuConfigured && getAdminApiSecret()) {
         void patchOrderOnServer(orderId, {
           paymentStatus: patch.paymentStatus,
@@ -557,6 +569,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           paidAt: patch.paidAt,
           paymentMethod: patch.paymentMethod,
           paymentAmountInr: patch.paymentAmountInr,
+          ...(paidNow
+            ? {
+                status: "confirmed" as const,
+                agentNote: "Auto-confirmed — online payment received.",
+              }
+            : {}),
         });
       }
     },

@@ -3,6 +3,8 @@
   --bg-mid: #0a6a96;
   --bg-soft: #e8f4fa;
   --foam: #f7fcff;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
   --ink: #123045;
   --ink-muted: #3a5568;
   --sea: #0d7aa8;
@@ -11,9 +13,33 @@
   --sand: #e0c49a;
   --line: rgba(4, 72, 102, 0.14);
   --shadow: 0 16px 40px rgba(4, 72, 102, 0.12);
+  --header-bg: rgba(247, 252, 255, 0.9);
+  --tabbar-bg: rgba(247, 252, 255, 0.95);
+  --nav-panel-bg: rgba(247, 252, 255, 0.98);
   --radius: 14px;
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Outfit", system-ui, sans-serif;
+}
+
+html[data-theme="dark"] {
+  --bg-deep: #061824;
+  --bg-mid: #0a3d56;
+  --bg-soft: #0f2433;
+  --foam: #0a1620;
+  --surface: #122838;
+  --surface-elevated: #173246;
+  --ink: #e8f4fa;
+  --ink-muted: #9bb4c4;
+  --sea: #3eb4e0;
+  --sea-bright: #6ec8ea;
+  --coral: #ef8f82;
+  --sand: #d4b48a;
+  --line: rgba(180, 220, 240, 0.14);
+  --shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  --header-bg: rgba(10, 22, 32, 0.9);
+  --tabbar-bg: rgba(10, 22, 32, 0.95);
+  --nav-panel-bg: rgba(10, 22, 32, 0.98);
+  color-scheme: dark;
 }
 
 * {
@@ -31,6 +57,7 @@ body {
   background: var(--foam);
   line-height: 1.5;
   min-height: 100vh;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 a {
@@ -65,7 +92,7 @@ h3,
   top: 0;
   z-index: 40;
   backdrop-filter: blur(14px);
-  background: rgba(247, 252, 255, 0.9);
+  background: var(--header-bg);
   border-bottom: 1px solid var(--line);
 }
 
@@ -109,6 +136,30 @@ h3,
 
 .nav a:hover {
   color: var(--sea);
+}
+
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.theme-toggle:hover {
+  border-color: var(--sea);
+  background: var(--bg-soft);
+}
+
+.theme-toggle span {
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .btn {
@@ -243,7 +294,7 @@ h3,
   height: 2.5rem;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: white;
+  background: var(--surface);
   padding: 0.55rem;
   cursor: pointer;
   flex-direction: column;
@@ -842,7 +893,7 @@ h3,
 .promise {
   padding: 1.4rem 1.35rem;
   border-radius: var(--radius);
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--line);
   animation: rise 0.7s ease both;
 }
@@ -878,7 +929,7 @@ h3,
 }
 
 .product-card {
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 1.15rem 1.2rem 1.25rem;
@@ -965,7 +1016,7 @@ h3,
 }
 
 .panel {
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 1.35rem;
@@ -991,10 +1042,11 @@ h3,
 .form-row input,
 .form-row select,
 .form-row textarea {
+  width: 100%;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 0.7rem 0.85rem;
-  background: var(--foam);
+  background: var(--surface-elevated);
   color: var(--ink);
 }
 
@@ -1025,7 +1077,7 @@ h3,
 }
 
 .mode-tabs button.active {
-  background: white;
+  background: var(--surface);
   color: var(--sea);
   box-shadow: 0 4px 14px rgba(4, 28, 36, 0.1);
 }
@@ -1038,7 +1090,7 @@ h3,
 
 .qty-chips button {
   border: 1px solid var(--line);
-  background: white;
+  background: var(--surface);
   border-radius: 999px;
   padding: 0.4rem 0.75rem;
   cursor: pointer;
@@ -1140,7 +1192,7 @@ h3,
   min-height: 240px;
   margin: 1rem auto 0;
   padding: 1rem;
-  background: #fff;
+  background: #ffffff;
   border-radius: 12px;
   border: 1px solid var(--line);
   max-width: 280px;
@@ -1208,7 +1260,7 @@ h3,
   gap: 0.75rem;
   align-items: flex-start;
   padding: 0.9rem 1rem;
-  background: white;
+  background: var(--surface);
   border-radius: 12px;
   border: 1px solid var(--line);
 }
@@ -1239,7 +1291,7 @@ h3,
   flex-direction: column;
   gap: 0.35rem;
   padding: 1rem;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   height: fit-content;
@@ -1461,7 +1513,7 @@ h3,
 
 .modal-panel {
   width: min(440px, 100%);
-  background: white;
+  background: var(--surface);
   border-radius: var(--radius) var(--radius) 0 0;
   padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--shadow);
@@ -1679,7 +1731,7 @@ h3,
     right: 0;
     height: 100dvh;
     width: min(300px, 86vw);
-    background: rgba(247, 252, 255, 0.98);
+    background: var(--nav-panel-bg);
     backdrop-filter: blur(16px);
     border-left: 1px solid var(--line);
     flex-direction: column;
@@ -1728,7 +1780,7 @@ h3,
     right: 0;
     bottom: 0;
     z-index: 40;
-    background: rgba(247, 252, 255, 0.95);
+    background: var(--tabbar-bg);
     backdrop-filter: blur(16px);
     border-top: 1px solid var(--line);
     padding: 0.35rem 0.4rem calc(0.4rem + env(safe-area-inset-bottom, 0px));
@@ -1859,4 +1911,55 @@ h3,
   .admin-price-table-wrap {
     margin-inline: -0.25rem;
   }
+}
+
+html[data-theme="dark"] .alert-info {
+  background: rgba(62, 180, 224, 0.15);
+  color: #b6e6f7;
+}
+
+html[data-theme="dark"] .alert-warn {
+  background: rgba(239, 143, 130, 0.16);
+  color: #f6c4bd;
+}
+
+html[data-theme="dark"] .alert-ok {
+  background: rgba(72, 180, 120, 0.16);
+  color: #b6e8c8;
+}
+
+html[data-theme="dark"] .status-pending_agent,
+html[data-theme="dark"] .status-pending,
+html[data-theme="dark"] .status-cod_pending {
+  background: rgba(240, 190, 70, 0.2);
+  color: #f0d78a;
+}
+
+html[data-theme="dark"] .status-confirmed,
+html[data-theme="dark"] .status-paid,
+html[data-theme="dark"] .status-cod_collected {
+  background: rgba(72, 180, 120, 0.2);
+  color: #9de0b5;
+}
+
+html[data-theme="dark"] .status-out_for_delivery {
+  background: rgba(62, 180, 224, 0.2);
+  color: #9ad8f0;
+}
+
+html[data-theme="dark"] .status-delivered {
+  background: rgba(160, 180, 200, 0.2);
+  color: #c5d4e0;
+}
+
+html[data-theme="dark"] .status-rejected,
+html[data-theme="dark"] .status-failed,
+html[data-theme="dark"] .status-expired {
+  background: rgba(239, 143, 130, 0.2);
+  color: #f0b0a8;
+}
+
+html[data-theme="dark"] .spinner {
+  border-color: rgba(180, 220, 240, 0.2);
+  border-top-color: var(--sea-bright);
 }
