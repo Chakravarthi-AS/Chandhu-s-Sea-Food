@@ -20,13 +20,15 @@ export async function fetchCustomerFromServer(
 
 export async function upsertCustomerOnServer(
   customer: CustomerAccount
-): Promise<boolean> {
+): Promise<CustomerAccount | null> {
   const res = await fetch("/api/customers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(customer),
   });
-  return res.ok;
+  if (!res.ok) return null;
+  const data = (await res.json()) as { customer?: CustomerAccount };
+  return data.customer ?? customer;
 }
 
 export async function updateCustomerOnServer(

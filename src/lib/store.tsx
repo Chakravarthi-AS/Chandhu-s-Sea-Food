@@ -490,10 +490,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           lastLoginAt: created.createdAt,
         } satisfies CustomerAccount);
 
-      const [orderSave, customerSave] = await Promise.all([
-        createOrderOnServer(created),
-        upsertCustomerOnServer(cust),
-      ]);
+      // Keep FK in sync: orders.customer_id must exist in customers first.
+      const orderForCloud: CustomerOrder = {
+        ...created,
+        customerId: cust.id,
+      };
+
+      const customerSave = await upsertCustomerOnServer(cust);
+      if (!customerSave) {
+        console.warn(
+          "[pay] customer cloud save failed — saving order without customer_id"
+        );
+        orderForCloud.customerId = undefined;
+      } else {
+        orderForCloud.customerId = customerSave.id;
+      }
+
+      const orderSave = await createOrderOnServer(orderForCloud);
 
       if (orderSave.configured) {
         setServerMenuConfigured(true);
@@ -504,17 +517,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               "Could not save order to cloud. Check connection and try again."
           );
         }
-        console.log("[pay] order saved to cloud", created.trackingCode);
+        console.log("[pay] order saved to cloud", orderForCloud.trackingCode);
+        // Reflect linked customer id locally
+        setState((s) => ({
+          ...s,
+          orders: s.orders.map((o) =>
+            o.id === created.id ? { ...o, customerId: orderForCloud.customerId } : o
+          ),
+          customers: customerSave
+            ? mergeCustomerIntoList(s.customers, {
+                ...customerSave,
+                lastLoginAt: created.createdAt,
+              })
+            : s.customers,
+        }));
       } else {
         console.warn(
           "[pay] cloud DB not configured — order kept in this browser only"
         );
       }
-      if (customerSave === false) {
-        console.warn("[pay] customer cloud save failed (order still saved)");
-      }
 
-      return created;
+      return { ...created, customerId: orderForCloud.customerId };
     },
     [state.customers, state.config.minKgForExtended]
   );
@@ -748,15 +771,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               : c
           );
           const updated = nextCustomers.find((c) => c.id === found.id);
-          if (serverMenuConfigured && updated) {
-            void upsertCustomerOnServer(updated);
-          }
+          void upsertCustomerOnServer(updated ?? account);
           return { ...s, customers: nextCustomers };
         }
         const nextCustomers = [...s.customers, account];
-        if (serverMenuConfigured) {
-          void upsertCustomerOnServer(account);
-        }
+        void upsertCustomerOnServer(account);
         return { ...s, customers: nextCustomers };
       });
 
@@ -769,7 +788,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         customer: account,
       };
     },
-    [pendingOtp, state.customers, serverMenuConfigured]
+    [pendingOtp, state.customers]
   );
 
   const logoutCustomer = useCallback(() => {

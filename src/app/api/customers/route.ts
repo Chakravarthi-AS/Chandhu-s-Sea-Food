@@ -62,7 +62,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
   }
 
-  const row = customerToRow({ ...customer, phone });
+  // Prefer existing DB row for this phone so orders.customer_id FK stays valid.
+  const { data: existing } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("phone", phone)
+    .maybeSingle();
+
+  const resolved: CustomerAccount = existing
+    ? {
+        ...customer,
+        id: (existing as { id: string }).id,
+        phone,
+        createdAt:
+          (existing as { created_at?: string }).created_at || customer.createdAt,
+      }
+    : { ...customer, phone };
+
+  const row = customerToRow(resolved);
   const { error } = await supabase.from("customers").upsert(row);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
